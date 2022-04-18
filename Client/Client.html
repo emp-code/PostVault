@@ -1,0 +1,143 @@
+<!doctype html>
+<html lang="en">
+	<head>
+		<meta name="postvault.spk" content="Replace this text with the SPK reported by the server on startup">
+		<meta name="postvault.domain" content="">
+
+		<meta name="author" content="EMPcode">
+		<meta name="description" content="Private online file storage">
+		<meta name="viewport" content="width=device-width, initial-scale=1">
+
+		<title>PostVault</title>
+
+		<style>
+			time {
+				font-family: monospace;
+			}
+		</style>
+	</head>
+
+	<body>
+		<div>
+			<h1>PostVault</h1>
+			<p><input type="password" maxlength="64" pattern="[0-9a-f]{64}" required autocomplete="current-password" autofocus></p>
+			<p><button>Enter</button></p>
+		</div>
+
+		<div hidden>Loading...</div>
+
+		<div hidden>
+			<ul></ul>
+
+			<p><button>Upload</button></p>
+		</div>
+
+		<script src="https://cdn.jsdelivr.net/gh/jedisct1/libsodium.js@0.7.10/dist/browsers/sodium.js" integrity="sha384-GEJ3DUwTjXaoqVwjTaPCJN0gtk+mbUoJ7/QO/6IKrlO+P7QHrV9497Vy5q+JNp7j" crossorigin="anonymous"></script>
+		<script src="PostVault.js"></script>
+		<script>
+"use strict";
+sodium.ready.then(function() {
+
+const vault = new PostVault(function(ok) {
+	if (!ok) {
+		document.getElementsByTagName("button")[0].disabled = true;
+		return;
+	}
+});
+
+function displayFiles() {
+	document.getElementsByTagName("div")[0].hidden = true;
+	document.getElementsByTagName("div")[1].hidden = true;
+	document.getElementsByTagName("div")[2].hidden = false;
+
+	document.getElementsByTagName("ul")[0].replaceChildren();
+
+	for (let i = 0; i < 256; i++) {
+		if (!vault.getFileName(i)) continue;
+
+		const elLi = document.createElement("li");
+		if (vault.getFileSize(i) > 0) {
+			const elTime = document.createElement("time");
+			elTime.textContent = new Date(vault.getFileTime(i) * 1000).toISOString().slice(0, 19).replace("T", " ") + " ";
+			elLi.append(elTime);
+
+			const elSpan = document.createElement("span");
+			elSpan.textContent = vault.getFileName(i) + " (" + Math.round(vault.getFileSize(i) / 1024) + " KiB) ";
+			elSpan.onclick = function() {
+				vault.downloadFile(i);
+			};
+			elLi.append(elSpan);
+
+			const delBtn = document.createElement("button");
+			delBtn.textContent = "Delete";
+			delBtn.onclick = function() {
+				const btn = this;
+				btn.disabled = true;
+
+				vault.deleteFile(i, function(status) {
+					if (status === 0) {
+						elSpan.onclick = "";
+						elLi.style.textDecoration = "line-through";
+					} else {
+						btn.enabled = true;
+					}
+				});
+			}
+			elLi.append(delBtn);
+		} else {
+			elLi.textContent = vault.getFileName(i);
+			elLi.style.textDecoration = "line-through";
+		}
+
+		document.getElementsByTagName("ul")[0].append(elLi);
+	}
+}
+
+document.getElementsByTagName("button")[0].onclick = function() {
+	const txtKey = document.getElementsByTagName("input")[0];
+	if (!txtKey.reportValidity()) return;
+	txtKey.disabled = true;
+
+	const btn = this;
+	btn.disabled = true;
+
+	vault.setKeys(txtKey.value, function(successSetKeys) {
+		if (!successSetKeys) {
+			btn.enabled = true;
+			return;		
+		}
+
+		document.getElementsByTagName("div")[0].hidden = true;
+		document.getElementsByTagName("div")[1].hidden = false;
+
+		vault.getInfo(function() {displayFiles()});
+	});
+};
+
+document.getElementsByTagName("button")[1].onclick = function() {
+	const btn = this;
+	const fileSelector = document.createElement("input");
+	fileSelector.type = "file";
+	fileSelector.click();
+
+	fileSelector.onchange = function() {
+		btn.disabled = true;
+
+		const reader = new FileReader();
+		reader.onload = function() {
+			vault.uploadFile(fileSelector.files[0].name, new Uint8Array(reader.result), function(status) {
+				if (status === 0) {
+					displayFiles();
+				}
+
+				btn.disabled = false;
+			});
+		};
+
+		reader.readAsArrayBuffer(fileSelector.files[0]);
+	};
+};
+});
+		</script>
+	</body>
+</html>
