@@ -161,10 +161,11 @@ static void respondFile(const int sock) {
 
 	const ssize_t r = pread(fd, resp + lenHeaders, lenFile, 0);
 	close(fd);
-	if (r != lenFile) return; // TODO: respond
+	if (r != lenFile) {free(resp); return;} // TODO: respond
 
 	// Send response
 	send(sock, resp, lenHeaders + lenFile, 0);
+	free(resp);
 }
 
 static void respondGet(const int sock, const unsigned char * const url) {
