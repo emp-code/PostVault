@@ -259,7 +259,7 @@ static void respondPost(const int sock, const unsigned char * const url, const s
 	while (isspace(*strCl)) {strCl++; if (strCl >= headersEnd) {puts("respondPost: No CL end"); return;}}
 
 	const long cl = strtol((char*)strCl, NULL, 10);
-	if (cl == 0)	{
+	if (cl == 0) {
 		deleteFile();
 	} else {
 		receiveInfo(sock, headersEnd + 4, (url + len) - (headersEnd + 4));
