@@ -217,6 +217,7 @@ static int receiveFile(const int sock, const size_t lenFile) {
 	sodium_bin2hex(path + 84, 3, &fileNum, 1);
 
 	const int fd = open(path, O_WRONLY | O_CREAT | O_TRUNC | O_CLOEXEC | O_NOATIME | O_NOCTTY | O_NOFOLLOW, S_IRUSR | S_IWUSR);
+	if (fd < 0) return -1;
 
 	unsigned char buf[PV_BUFSIZE];
 	size_t written = 0;
