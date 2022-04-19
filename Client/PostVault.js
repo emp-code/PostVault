@@ -160,6 +160,8 @@ function PostVault(readyCallback) {
 
 	this.downloadFile = function(fileNum, callback) {
 		_fetchEncrypted(fileNum, null, function(status, resp) {
+			if (status !== 0) {callback(status); return;}
+
 			const dec = sodium.crypto_secretbox_open_easy(resp, _genFileNonce(fileNum, _files[fileNum].sz - sodium.crypto_secretbox_MACBYTES, _files[fileNum].fn), _own_pvk);
 
 			const a = document.createElement("a");
@@ -175,6 +177,8 @@ function PostVault(readyCallback) {
 
 	this.getInfo = function(callback) {
 		_fetchEncrypted(null, null, function(status, resp) {
+			if (status !== 0) {callback(status); return;}
+
 			try {_pvInfo = sodium.crypto_secretbox_open_easy(resp.slice(sodium.crypto_secretbox_NONCEBYTES, _PV_LEN_INFO_ENC), resp.slice(0, sodium.crypto_secretbox_NONCEBYTES), _own_pvk);}
 			catch(e) {_pvInfo = new Uint8Array(_PV_LEN_INFO_DEC);}
 
