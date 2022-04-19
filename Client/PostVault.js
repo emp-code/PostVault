@@ -9,7 +9,7 @@ function PostVault(readyCallback) {
 	const _PV_DOMAIN = document.head.querySelector("meta[name='postvault.domain']").content;
 	const _PV_DOCSPK = document.head.querySelector("meta[name='postvault.spk']").content;
 
-	if (!_PV_DOMAIN || !new RegExp(/(?=^.{4,253}$)(^((?!-)[0-9a-z-]{1,63}(?<!-)\.)+[a-z]{2,63}$)/).test(_PV_DOMAIN) || !_PV_DOCSPK || !(new RegExp("^[0-9A-f]{" + (sodium.crypto_box_PUBLICKEYBYTES * 2).toString() + "}$").test(_PV_DOCSPK))) {
+	if (!_PV_DOMAIN || !new RegExp(/^[0-9a-z.-]{1,63}\.[0-9a-z-]{2,63}$/).test(_PV_DOMAIN) || !_PV_DOCSPK || !new RegExp("^[0-9A-f]{" + (sodium.crypto_box_PUBLICKEYBYTES * 2).toString() + "}$").test(_PV_DOCSPK)) {
 		readyCallback(false);
 		return;
 	}
