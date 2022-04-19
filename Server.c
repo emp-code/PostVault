@@ -188,7 +188,7 @@ static int receiveInfo(const int sock, const unsigned char * const beginData, co
 	}
 
 	if (lenInfo != PV_LEN_INFO) {
-		printf("recvinfo fail: %m (%zd/%d)\n", lenInfo, PV_LEN_INFO);
+		printf("recvinfo fail: %m (%zu/%u)\n", lenInfo, PV_LEN_INFO);
 		return -1;
 	}
 
