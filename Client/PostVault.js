@@ -154,7 +154,7 @@ function PostVault(readyCallback) {
 		uploadData.set(sodium.crypto_secretbox_easy(fileData, _genFileNonce(fileNum, fileData.length, fileName), _own_pvk), _PV_LEN_INFO_ENC);
 
 		_fetchEncrypted(fileNum, uploadData, function(status) {
-			// TODO: If fail, restore previous file info
+			if (status !== 0) _files[fileNum] = null;
 			callback(status);
 		});
 	};
