@@ -262,8 +262,10 @@ static void respondPost(const int sock, const unsigned char * const url, const s
 	if (cl == 0) {
 		deleteFile();
 	} else {
-		receiveInfo(sock, headersEnd + 4, (url + len) - (headersEnd + 4));
-		receiveFile(sock, cl - PV_LEN_INFO);
+		if (receiveInfo(sock, headersEnd + 4, (url + len) - (headersEnd + 4)) != 0 || receiveFile(sock, cl - PV_LEN_INFO) != 0) {
+			// TODO: respond
+			return;
+		}
 	}
 
 	send(sock, 
