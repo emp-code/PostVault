@@ -124,10 +124,11 @@ function PostVault(readyCallback) {
 	this.getFileTime = function(num) {return _files[num]? _files[num].ts : null;};
 
 	this.deleteFile = function(fileNum, callback) {
+		const oldSz = _files[fileNum].sz;
 		_files[fileNum].sz = 0;
 
 		_fetchEncrypted(fileNum, new Uint8Array(0), function(status) {
-			// TODO: If fail, restore previous file info
+			if (status !== 0) _files[fileNum].sz = oldSz;
 			callback(status);
 		});
 	};
