@@ -34,8 +34,7 @@ static int clearCaps(void) {
 
 static void acceptClients(void) {
 	const int sock = createSocket(PV_PORT, true, 10, 10);
-	if (sock < 0) return;
-	clearCaps();
+	if (sock < 0 || clearCaps() != 0) return;
 
 	puts("Ready");
 
