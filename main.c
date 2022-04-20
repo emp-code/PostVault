@@ -9,6 +9,7 @@
 #include <stdbool.h>
 #include <sys/capability.h>
 #include <sys/prctl.h>
+#include <sys/resource.h>
 #include <sys/socket.h>
 #include <unistd.h>
 
@@ -111,6 +112,17 @@ static int setCaps(void) {
 	) ? 0 : -1;
 }
 
+static int setLimits(void) {
+	struct rlimit rlim;
+	rlim.rlim_cur = 0;
+	rlim.rlim_max = 0;
+
+	return (
+	   setrlimit(RLIMIT_CORE,     &rlim) == 0
+	|| setrlimit(RLIMIT_MSGQUEUE, &rlim) == 0
+	) ? 0 : -1;
+}
+
 static bool ptraceDisabled(void) {
 	const int fd = open("/proc/sys/kernel/yama/ptrace_scope", O_RDWR | O_CLOEXEC | O_NOATIME | O_NOCTTY | O_NOFOLLOW);
 	if (fd < 0 || !validFd(fd)) return false;
@@ -141,6 +153,7 @@ int main(void) {
 	if (prctl(PR_MCE_KILL, PR_MCE_KILL_EARLY, 0, 0, 0) != 0) return 12; // Kill early if memory corruption detected
 
 	if (sodium_init() != 0) return 20;
+	if (setLimits()   != 0) return 23;
 	if (setCaps()     != 0) return 24;
 	if (dropBounds()  != 0) return 25;
 
