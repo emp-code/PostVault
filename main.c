@@ -1,4 +1,4 @@
-#ifndef __x86_64__ 
+#ifndef __x86_64__
 	#error Must be used on a 64-bit system
 #endif
 
