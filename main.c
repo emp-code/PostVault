@@ -19,7 +19,7 @@
 
 #include "Server.h"
 
-#define PV_PORT 888
+#define PV_PORT 307
 
 static void acceptClients(void) {
 	const int sock = createSocket(PV_PORT, true, 10, 10);

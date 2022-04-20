@@ -29,7 +29,7 @@ function PostVault(readyCallback) {
 	};
 
 	const _fetchBinary = function(urlBase, postData, callback) {
-		fetch((_PV_DOMAIN.endsWith(".onion") ? "http://" : "https://") + _PV_DOMAIN + ":888/" + sodium.to_base64(urlBase, sodium.base64_variants.URLSAFE), {
+		fetch((_PV_DOMAIN.endsWith(".onion") ? "http://" : "https://") + _PV_DOMAIN + ":307/" + sodium.to_base64(urlBase, sodium.base64_variants.URLSAFE), {
 			method: postData? "POST" : "GET",
 			cache: "no-store",
 			credentials: "omit",
