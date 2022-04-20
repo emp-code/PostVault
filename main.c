@@ -22,9 +22,20 @@
 
 #define PV_PORT 307
 
+static int clearCaps(void) {
+	cap_t caps = cap_get_proc();
+
+	return (
+	   cap_clear(caps) == 0
+	&& cap_set_proc(caps) == 0
+	&& cap_free(caps) == 0
+	) ? 0 : -1;
+}
+
 static void acceptClients(void) {
 	const int sock = createSocket(PV_PORT, true, 10, 10);
 	if (sock < 0) return;
+	clearCaps();
 
 	puts("Ready");
 
