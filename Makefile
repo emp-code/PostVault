@@ -4,7 +4,7 @@ CFLAGS=-O2 -march=native -pipe -Wall -Wextra -Wno-comment -D_GNU_SOURCE -D_FORTI
 all: PostVault
 
 PostVault: *.c Common/*.c
-	$(CC) $(CFLAGS) -o PostVault *.c Common/*.c -lsodium
+	$(CC) $(CFLAGS) -o PostVault *.c Common/*.c -lsodium -lcap
 
 .PHONY: clean
 clean:
