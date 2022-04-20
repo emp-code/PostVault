@@ -12,10 +12,6 @@
 #include "Common/GetKey.h"
 #include "Common/memeq.h"
 
-// TODO: Run as own user
-#define PV_UID 0
-#define PV_GID 0
-
 #define PV_LEN_INFO ((256 * 32) + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) // 8232
 
 #define PV_MAXLEN_REQ 1000
@@ -29,11 +25,19 @@
 #define PV_LEN_RESPONSE_LIST_HEADERS 93
 #define PV_LEN_RESPONSE_FILE_HEADERS 88
 
+uid_t pv_uid = 0;
+gid_t pv_gid = 0;
+
 unsigned char spk[crypto_box_PUBLICKEYBYTES];
 unsigned char ssk[crypto_box_SECRETKEYBYTES];
 
 unsigned char upk[crypto_box_PUBLICKEYBYTES];
 unsigned char fileNum = 0xFF;
+
+void pv_setUser(const uid_t new_uid, const gid_t new_gid) {
+	pv_uid = new_uid;
+	pv_gid = new_gid;
+}
 
 int pv_init(void) {
 	if (getKey(spk, ssk) != 0) return -1;
@@ -155,8 +159,8 @@ static void respondFile(const int sock) {
 	if (lenFile < 1
 	|| s.st_mode  != (S_IFREG | S_IRUSR | S_IWUSR)
 	|| s.st_nlink != 1
-	|| s.st_uid   != PV_UID
-	|| s.st_gid   != PV_GID
+	|| s.st_uid   != pv_uid
+	|| s.st_gid   != pv_gid
 	) return; // TODO: respond
 
 	const size_t lenHeaders = PV_LEN_RESPONSE_FILE_HEADERS + numberOfDigits(lenFile);

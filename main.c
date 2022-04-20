@@ -4,6 +4,7 @@
 
 #include <arpa/inet.h>
 #include <fcntl.h>
+#include <grp.h>
 #include <linux/securebits.h>
 #include <locale.h>
 #include <stdbool.h>
@@ -12,6 +13,7 @@
 #include <sys/resource.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <pwd.h>
 
 #include <sodium.h>
 
@@ -46,6 +48,20 @@ static void acceptClients(void) {
 	}
 
 	close(sock);
+}
+
+static int dropRoot(void) {
+	const struct passwd * const p = getpwnam("postvault");
+
+	pv_setUser(p->pw_uid, p->pw_gid);
+
+	return (p != NULL
+	&& setgroups(0, NULL) == 0
+	&& setgid(p->pw_gid) == 0
+	&& setuid(p->pw_uid) == 0
+	&& getgid() == p->pw_gid
+	&& getuid() == p->pw_uid
+	) ? 0 : -1;
 }
 
 static int dropBounds(void) {
@@ -97,7 +113,9 @@ static int dropBounds(void) {
 static int setCaps(void) {
 	if (!CAP_IS_SUPPORTED(CAP_SETFCAP)) return -1;
 
-	const cap_value_t capMain[4] = {
+	const cap_value_t capMain[6] = {
+		CAP_SETGID, // Set group IDs
+		CAP_SETUID, // Set user ID
 		CAP_NET_BIND_SERVICE, // Bind to port #<1024
 		CAP_NET_RAW, // Bind to specific interfaces
 		CAP_SETPCAP, // Allow capability/secbit changes
@@ -108,8 +126,8 @@ static int setCaps(void) {
 
 	return (
 	   cap_clear(caps) == 0
-	&& cap_set_flag(caps, CAP_PERMITTED, 4, capMain, CAP_SET) == 0
-	&& cap_set_flag(caps, CAP_EFFECTIVE, 4, capMain, CAP_SET) == 0
+	&& cap_set_flag(caps, CAP_PERMITTED, 6, capMain, CAP_SET) == 0
+	&& cap_set_flag(caps, CAP_EFFECTIVE, 6, capMain, CAP_SET) == 0
 	&& cap_set_proc(caps) == 0
 	&& cap_free(caps) == 0
 	&& prctl(PR_SET_SECUREBITS,
@@ -169,6 +187,7 @@ int main(void) {
 	if (setLimits()   != 0) return 23;
 	if (setCaps()     != 0) return 24;
 	if (dropBounds()  != 0) return 25;
+	if (dropRoot()    != 0) return 26;
 
 	if (pv_init() != 0) return 99;
 
