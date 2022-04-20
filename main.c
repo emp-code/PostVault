@@ -33,12 +33,14 @@ static void acceptClients(void) {
 
 int main(void) {
 	setlocale(LC_ALL, "C");
-	if (sodium_init() != 0) return 1;
+
+	if (getuid() != 0) {puts("Terminating: Must be started as root"); return 1;}
 
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return 10;
 	if (prctl(PR_SET_DUMPABLE, 0, 0, 0, 0) != 0) return 11; // Disable core dumps and ptrace
 	if (prctl(PR_MCE_KILL, PR_MCE_KILL_EARLY, 0, 0, 0) != 0) return 12; // Kill early if memory corruption detected
 
+	if (sodium_init() != 0) return 1;
 	if (pv_init() != 0) return 99;
 
 	acceptClients();
