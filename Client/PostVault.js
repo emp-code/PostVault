@@ -138,7 +138,7 @@ function PostVault(readyCallback) {
 		if (fileNum < 0) {callback(-1); return;}
 
 		const fileTs = Math.round(Date.now() / 1000);
-		_files[fileNum] = new PvFile(fileTs, fileData.length, fileName);
+		_files[fileNum] = new PvFile(fileTs, fileData.length + sodium.crypto_secretbox_MACBYTES, fileName);
 		_genPvInfo();
 
 		const uploadData = new Uint8Array(_PV_LEN_INFO_ENC + fileData.length + sodium.crypto_secretbox_MACBYTES);
