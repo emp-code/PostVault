@@ -114,11 +114,11 @@ static int setCaps(void) {
 	if (!CAP_IS_SUPPORTED(CAP_SETFCAP)) return -1;
 
 	const cap_value_t capMain[6] = {
-		CAP_SETGID, // Set group IDs
-		CAP_SETUID, // Set user ID
 		CAP_NET_BIND_SERVICE, // Bind to port #<1024
 		CAP_NET_RAW, // Bind to specific interfaces
+		CAP_SETGID, // Set group IDs
 		CAP_SETPCAP, // Allow capability/secbit changes
+		CAP_SETUID, // Set user ID
 		CAP_SYS_RESOURCE // Allow changing resource limits
 	};
 
