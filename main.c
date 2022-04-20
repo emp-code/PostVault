@@ -32,6 +32,7 @@ static void acceptClients(void) {
 }
 
 int main(void) {
+	setlocale(LC_ALL, "C");
 	if (sodium_init() != 0) return 1;
 
 	if (prctl(PR_SET_NO_NEW_PRIVS, 1, 0, 0, 0) != 0) return 10;
