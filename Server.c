@@ -12,6 +12,10 @@
 #include "Common/GetKey.h"
 #include "Common/memeq.h"
 
+// TODO: Run as own user
+#define PV_UID 0
+#define PV_GID 0
+
 #define PV_LEN_INFO ((256 * 32) + crypto_secretbox_NONCEBYTES + crypto_secretbox_MACBYTES) // 8232
 
 #define PV_MAXLEN_REQ 1000
@@ -144,8 +148,16 @@ static void respondFile(const int sock) {
 	const int fd = open(path, O_RDONLY | O_CLOEXEC | O_NOATIME | O_NOCTTY | O_NOFOLLOW);
 	if (fd < 0) return; // TODO: respond
 
-	const off_t lenFile = lseek(fd, 0, SEEK_END);
-	if (lenFile < 1) return; // TODO: respond
+	struct stat s;
+	if (fstat(fd, &s) != 0) return; // TODO: respond
+	const off_t lenFile = s.st_size;
+
+	if (lenFile < 1
+	|| s.st_mode  != (S_IFREG | S_IRUSR | S_IWUSR)
+	|| s.st_nlink != 1
+	|| s.st_uid   != PV_UID
+	|| s.st_gid   != PV_GID
+	) return; // TODO: respond
 
 	const size_t lenHeaders = PV_LEN_RESPONSE_FILE_HEADERS + numberOfDigits(lenFile);
 	unsigned char * const resp = malloc(lenHeaders + lenFile);
