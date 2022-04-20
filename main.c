@@ -37,6 +37,49 @@ static void acceptClients(void) {
 	close(sock);
 }
 
+static int dropBounds(void) {
+	return (
+	   cap_drop_bound(CAP_AUDIT_CONTROL)    == 0
+	&& cap_drop_bound(CAP_AUDIT_READ)       == 0
+	&& cap_drop_bound(CAP_AUDIT_WRITE)      == 0
+	&& cap_drop_bound(CAP_BLOCK_SUSPEND)    == 0
+	&& cap_drop_bound(CAP_CHOWN)            == 0
+	&& cap_drop_bound(CAP_DAC_OVERRIDE)     == 0
+	&& cap_drop_bound(CAP_DAC_READ_SEARCH)  == 0
+	&& cap_drop_bound(CAP_FOWNER)           == 0
+	&& cap_drop_bound(CAP_FSETID)           == 0
+	&& cap_drop_bound(CAP_IPC_LOCK)         == 0
+	&& cap_drop_bound(CAP_IPC_OWNER)        == 0
+	&& cap_drop_bound(CAP_KILL)             == 0
+	&& cap_drop_bound(CAP_LEASE)            == 0
+	&& cap_drop_bound(CAP_LINUX_IMMUTABLE)  == 0
+	&& cap_drop_bound(CAP_MAC_ADMIN)        == 0
+	&& cap_drop_bound(CAP_MAC_OVERRIDE)     == 0
+	&& cap_drop_bound(CAP_MKNOD)            == 0
+	&& cap_drop_bound(CAP_NET_ADMIN)        == 0
+	&& cap_drop_bound(CAP_NET_BIND_SERVICE) == 0
+	&& cap_drop_bound(CAP_NET_BROADCAST)    == 0
+	&& cap_drop_bound(CAP_NET_RAW)          == 0
+	&& cap_drop_bound(CAP_SETFCAP)          == 0
+	&& cap_drop_bound(CAP_SETGID)           == 0
+	&& cap_drop_bound(CAP_SETPCAP)          == 0
+	&& cap_drop_bound(CAP_SETUID)           == 0
+	&& cap_drop_bound(CAP_SYSLOG)           == 0
+	&& cap_drop_bound(CAP_SYS_ADMIN)        == 0
+	&& cap_drop_bound(CAP_SYS_BOOT)         == 0
+	&& cap_drop_bound(CAP_SYS_CHROOT)       == 0
+	&& cap_drop_bound(CAP_SYS_MODULE)       == 0
+	&& cap_drop_bound(CAP_SYS_NICE)         == 0
+	&& cap_drop_bound(CAP_SYS_PACCT)        == 0
+	&& cap_drop_bound(CAP_SYS_PTRACE)       == 0
+	&& cap_drop_bound(CAP_SYS_RAWIO)        == 0
+	&& cap_drop_bound(CAP_SYS_RESOURCE)     == 0
+	&& cap_drop_bound(CAP_SYS_TIME)         == 0
+	&& cap_drop_bound(CAP_SYS_TTY_CONFIG)   == 0
+	&& cap_drop_bound(CAP_WAKE_ALARM)       == 0
+	) ? 0 : -1;
+}
+
 static int setCaps(void) {
 	if (!CAP_IS_SUPPORTED(CAP_SETFCAP)) return -1;
 
@@ -99,6 +142,7 @@ int main(void) {
 
 	if (sodium_init() != 0) return 20;
 	if (setCaps()     != 0) return 24;
+	if (dropBounds()  != 0) return 25;
 
 	if (pv_init() != 0) return 99;
 
