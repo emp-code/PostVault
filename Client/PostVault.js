@@ -134,6 +134,8 @@ function PostVault(readyCallback) {
 	};
 
 	this.uploadFile = function(fileName, fileData, callback) {
+		if (fileName.length > 32) {callback(-1); return;}
+
 		const fileNum = _getFreeSlot();
 		if (fileNum < 0) {callback(-1); return;}
 
