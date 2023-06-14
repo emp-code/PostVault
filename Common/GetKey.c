@@ -5,24 +5,20 @@
 
 #include "../Common/ToggleEcho.h"
 
-int getKey(unsigned char * const pk, unsigned char * const sk) {
+int getKey(unsigned char * const target, const size_t len) {
 	toggleEcho(false);
-	fprintf(stderr, "Enter PostVault Key (hex) - will not echo\n");
+	fprintf(stderr, "Enter key (hex) - will not echo\n");
 
-	char seedHex[crypto_box_SEEDBYTES * 2];
-	for (unsigned int i = 0; i < crypto_box_SEEDBYTES * 2; i++) {
+	char hex[len * 2];
+	for (unsigned int i = 0; i < len * 2; i++) {
 		const int gc = getchar_unlocked();
-		if (gc == EOF || !isxdigit(gc)) {toggleEcho(true); return -1;}
-		seedHex[i] = gc;
+		if (!isxdigit(gc)) {toggleEcho(true); return -1;}
+		hex[i] = gc;
 	}
 
+	sodium_hex2bin(target, len, hex, len * 2, NULL, NULL, NULL);
+	sodium_memzero(hex, len * 2);
+
 	toggleEcho(true);
-
-	unsigned char seed[crypto_box_SEEDBYTES];
-	sodium_hex2bin(seed, crypto_box_SEEDBYTES, seedHex, crypto_box_SEEDBYTES * 2, NULL, NULL, NULL);
-	sodium_memzero(seedHex, crypto_box_SEEDBYTES * 2);
-
-	crypto_box_seed_keypair(pk, sk, seed);
-	sodium_memzero(seed, crypto_box_SEEDBYTES);
 	return 0;
 }
