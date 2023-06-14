@@ -15,7 +15,7 @@ struct pv_user {
 	uint32_t r3;
 };
 
-int main() {
+int main(void) {
 	if (sodium_init() != 0) return 1;
 	puts("PostVault: AddUser");
 
