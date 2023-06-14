@@ -125,7 +125,7 @@ void respondClient(const int sock) {
 
 	unsigned char box[108];
 	size_t boxLen = 0;
-	sodium_base642bin(box, 108, (char*)b64_begin, 144, NULL, &boxLen, NULL, sodium_base64_VARIANT_URLSAFE_NO_PADDING);
+	sodium_base642bin(box, 108, (const char*)b64_begin, 144, NULL, &boxLen, NULL, sodium_base64_VARIANT_URLSAFE_NO_PADDING);
 	if (boxLen != 108) {puts("Terminating: Failed decoding Base64");return;}
 
 	unsigned char box_nonce[crypto_box_NONCEBYTES];
@@ -170,7 +170,7 @@ void respondClient(const int sock) {
 		lenBuf += lenRcv;
 
 		const unsigned char * const cl = memcasemem(buf, lenBuf, "Content-Length:", 15);
-		const long uploadSize = (cl != NULL && memchr(cl + 15, '\r', (buf + lenBuf) - (cl + 15)) != NULL) ? strtol((char*)cl + 15, NULL, 10) : -1;
+		const long uploadSize = (cl != NULL && memchr(cl + 15, '\r', (buf + lenBuf) - (cl + 15)) != NULL) ? strtol((const char*)cl + 15, NULL, 10) : -1;
 
 		if (uploadSize == 0) {
 			return respond_delFile(sock, dec.slot, users[user].uak, box_pk, pv_box_sk);
