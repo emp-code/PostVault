@@ -5,6 +5,8 @@
 
 #include "../Common/ToggleEcho.h"
 
+#include "GetKey.h"
+
 int getKey(unsigned char * const target, const size_t len) {
 	toggleEcho(false);
 	fprintf(stderr, "Enter key (hex) - will not echo\n");
