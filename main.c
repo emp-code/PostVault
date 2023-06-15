@@ -22,7 +22,14 @@ static void acceptClients(void) {
 	while (1) {
 		const int newSock = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
 		if (newSock < 0) continue;
+
 		respondClient(newSock);
+
+		// Make sure the response is sent before closing the socket
+		shutdown(newSock, SHUT_WR);
+		unsigned char x[1024];
+		read(newSock, x, 1024);
+		read(newSock, x, 1024);
 		close(newSock);
 	}
 

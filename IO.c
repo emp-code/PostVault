@@ -318,8 +318,6 @@ void respond_getFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 	free(rawData);
 
 	for (size_t sent = 0; sent < lenHeaders + lenEnc;) {
-		usleep(1); // Seems to fix connection reset errors
-
 		if (sent + PV_SENDSIZE >= lenHeaders + lenEnc) {
 			if (send(sock, response + sent, lenHeaders + lenEnc - sent, 0) != (ssize_t)(lenHeaders + lenEnc - sent)) puts("Failed sending");
 			break;

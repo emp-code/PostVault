@@ -173,6 +173,7 @@ void respondClient(const int sock) {
 		const long uploadSize = (cl != NULL && memchr(cl + 15, '\r', (buf + lenBuf) - (cl + 15)) != NULL) ? strtol((const char*)cl + 15, NULL, 10) : -1;
 
 		if (uploadSize == 0) {
+			shutdown(sock, SHUT_RD);
 			return respond_delFile(sock, dec.slot, users[user].uak, box_pk, pv_box_sk);
 		}
 
@@ -182,6 +183,7 @@ void respondClient(const int sock) {
 
 			postBegin += 4;
 			recv(sock, buf, postBegin - buf, MSG_WAITALL);
+			shutdown(sock, SHUT_RD);
 
 			respond_addFile(sock, users[user].uak, dec.slot, req.chunk, dec.mfk, dec.flag_replace, uploadSize, ts, box_pk, pv_box_sk);
 			break;
