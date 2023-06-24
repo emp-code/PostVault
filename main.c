@@ -6,6 +6,7 @@
 #include <stdio.h>
 #include <sys/socket.h>
 #include <unistd.h>
+#include <sched.h>
 
 #include "Common/CreateSocket.h"
 
@@ -39,6 +40,16 @@ static void acceptClients(void) {
 int main(void) {
 	setlocale(LC_ALL, "C");
 	if (sodium_init() != 0) return 1;
+
+	if (unshare(
+		  CLONE_FILES // File descriptor table
+		| CLONE_FS // chroot/chdir/umask
+		| CLONE_NEWIPC // Unused
+		| CLONE_NEWNS // Mount namespace
+		| CLONE_NEWUTS // Hostname
+		| CLONE_SYSVSEM // Unused
+	) != 0) return 6;
+
 	if (chroot("/var/lib/PostVault") != 0 || chdir("/") != 0) return 2;
 
 	if (pv_init() != 0) return 99;
