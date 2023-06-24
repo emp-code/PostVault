@@ -52,7 +52,7 @@ static int userCount = 0;
 static struct pv_user *users;
 
 static void loadUsers(const unsigned char * const sfk) {
-	const int fd = open("/var/lib/PostVault/Users.pv", O_RDONLY | O_NOCTTY);
+	const int fd = open("/Users.pv", O_RDONLY | O_NOCTTY);
 	if (fd < 0) {puts("Failed opening Users.pv"); return;}
 
 	const unsigned int maxUsers = lseek(fd, 0, SEEK_END) / (sizeof(struct pv_user) + crypto_aead_chacha20poly1305_ABYTES);

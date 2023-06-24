@@ -39,6 +39,7 @@ static void acceptClients(void) {
 int main(void) {
 	setlocale(LC_ALL, "C");
 	if (sodium_init() != 0) return 1;
+	if (chroot("/var/lib/PostVault") != 0 || chdir("/") != 0) return 2;
 
 	if (pv_init() != 0) return 99;
 

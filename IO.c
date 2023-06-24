@@ -20,7 +20,7 @@
 #define PV_BLOCKSIZE 16
 #define PV_CHUNKSIZE 16777216
 #define PV_SENDSIZE 1024
-#define PV_PATH_USERDIR_LENGTH 65
+#define PV_PATH_USERDIR_LENGTH 47
 #define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 4)
 
 static unsigned char pathKey[crypto_kdf_KEYBYTES];
@@ -68,7 +68,7 @@ static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], cons
 	unsigned char path_key[crypto_box_PUBLICKEYBYTES];
 	crypto_kdf_derive_from_key(path_key, crypto_box_PUBLICKEYBYTES, 1, "PV:Path2", pathKey);
 
-	memcpy(out, "/var/lib/PostVault/User/", 24);
+	memcpy(out, "/User/", 6);
 
 	for (int i = 0; i < 11; i++) {
 		union {
@@ -85,12 +85,12 @@ static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], cons
 
 			out[PV_PATH_USERDIR_LENGTH - 1] = '/';
 
-			offset = 25;
+			offset = 7;
 			u.u8[0] = slot;
 			u.u8[1] = uak[31] ^ path_key[31];
 			u.u8[2] = uak[30] ^ path_key[30];
 		} else {
-			offset = 24;
+			offset = 6;
 			u.u8[0] = uak[(i * 3) + 2] ^ path_key[(i * 3) + 2];
 			u.u8[1] = uak[(i * 3) + 1] ^ path_key[(i * 3) + 1];
 			u.u8[2] = uak[(i * 3) + 0] ^ path_key[(i * 3) + 0];
