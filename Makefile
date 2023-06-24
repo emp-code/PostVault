@@ -4,7 +4,7 @@ CFLAGS=-DPV_PORT=1307 -O2 -march=native -pipe -Wall -Wextra -Wno-comment -D_GNU_
 all: PostVault PV_AddUser
 
 PostVault: *.c Common/*.c
-	$(CC) $(CFLAGS) -o PostVault *.c Common/*.c -lsodium
+	$(CC) $(CFLAGS) -o PostVault *.c Common/*.c -lsodium -lcap
 
 PV_AddUser: Utils/AddUser.c Common/GetKey.c Common/ToggleEcho.c
 	$(CC) $(CFLAGS) -o PV_AddUser Utils/AddUser.c Common/GetKey.c Common/ToggleEcho.c -lsodium

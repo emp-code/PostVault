@@ -9,6 +9,7 @@
 
 #include <sodium.h>
 
+#include "Common/CreateSocket.h"
 #include "Common/GetKey.h"
 #include "Common/memeq.h"
 #include "IO.h"
@@ -81,6 +82,8 @@ static void loadUsers(const unsigned char * const sfk) {
 }
 
 int pv_init(void) {
+	if (sodium_init() != 0) return -1;
+
 	unsigned char smk[crypto_kdf_KEYBYTES];
 	if (getKey(smk, crypto_kdf_KEYBYTES) != 0) return -1;
 
@@ -102,7 +105,8 @@ int pv_init(void) {
 	if (userCount < 1) {puts("Failed loading user data"); return -1;}
 
 	sodium_memzero(smk, crypto_kdf_KEYBYTES);
-	return 0;
+
+	return createSocket(PV_PORT);
 }
 
 static int getUserFromId(const uint32_t id) {
@@ -113,7 +117,7 @@ static int getUserFromId(const uint32_t id) {
 	return -1;
 }
 
-void respondClient(const int sock) {
+static void respondClient(const int sock) {
 	unsigned char buf[1024];
 	int lenBuf = recv(sock, buf, PV_REQ_LINE1_LEN, 0);
 	if (lenBuf < PV_REQ_LINE1_LEN) return;
@@ -191,4 +195,22 @@ void respondClient(const int sock) {
 
 		if (lenBuf > 1023) break;
 	}
+}
+
+void acceptClients(const int sock) {
+	while (1) {
+		const int newSock = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
+		if (newSock < 0) continue;
+
+		respondClient(newSock);
+
+		// Make sure the response is sent before closing the socket
+		shutdown(newSock, SHUT_WR);
+		unsigned char x[1024];
+		read(newSock, x, 1024);
+		read(newSock, x, 1024);
+		close(newSock);
+	}
+
+	close(sock);
 }
