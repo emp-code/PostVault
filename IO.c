@@ -65,8 +65,8 @@ void ioSetup(const unsigned char * const newPathKey) {
 }
 
 static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, char * const out) {
-	unsigned char path_key[crypto_box_PUBLICKEYBYTES];
-	crypto_kdf_derive_from_key(path_key, crypto_box_PUBLICKEYBYTES, 1, "PV:Path2", pathKey);
+	unsigned char path_key[32];
+	crypto_kdf_derive_from_key(path_key, 32, 1, "PV:Path2", pathKey);
 
 	memcpy(out, "/User/", 6);
 
