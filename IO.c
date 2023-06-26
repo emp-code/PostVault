@@ -79,11 +79,11 @@ static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], cons
 		int offset = 6;
 		if (i == 10) {
 			if (slot < 0 || slot > UINT8_MAX) {
-				out[PV_PATH_USERDIR_LENGTH - 1] = '\0';
+				out[PV_PATH_USERDIR_LENGTH] = '\0';
 				return 0;
 			}
 
-			out[PV_PATH_USERDIR_LENGTH - 1] = '/';
+			out[PV_PATH_USERDIR_LENGTH] = '/';
 
 			offset++;
 			u.u8[0] = slot;
