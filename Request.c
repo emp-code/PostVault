@@ -5,6 +5,7 @@
 #include <string.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
+#include <time.h>
 #include <unistd.h>
 
 #include <sodium.h>
@@ -17,6 +18,7 @@
 #include "Request.h"
 
 #define PV_REQ_LINE1_LEN 152
+#define PV_REQ_TS_MAXDIFF 30000 // in ms
 
 // API box keys
 static unsigned char pv_box_pk[crypto_box_PUBLICKEYBYTES];
@@ -156,12 +158,18 @@ static void respondClient(const int sock) {
 		return;
 	}
 
+	const int64_t tsCurrent = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
+	const unsigned char tsRequest[8] = {req.ts[0], req.ts[1], req.ts[2], req.ts[3], req.ts[4], 0, 0, 0};
+	if (labs(tsCurrent - *(int64_t*)tsRequest) > PV_REQ_TS_MAXDIFF) {
+		puts("Terminating: Suspected replay attack - time difference too large");
+		return;
+	}
+
 	if (memeq(buf, "GET /", 5)) return respond_getFile(sock, users[user].uak, dec.slot, req.chunk, box_pk, pv_box_sk);
 
 	// POST request
 	if (sodium_compare(req.ts, users[user].lastMod, 5) != 1) {
-		// This request isn't newer than the latest recorded modification request for this user
-		puts("Terminating: Suspected replay attack");
+		puts("Terminating: Suspected replay attack - request older than last modification");
 		return;
 	}
 	memcpy(users[user].lastMod, req.ts, 5);
