@@ -76,7 +76,7 @@ static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], cons
 			uint8_t u8[4];
 		} u;
 
-		int offset;
+		int offset = 6;
 		if (i == 10) {
 			if (slot < 0 || slot > UINT8_MAX) {
 				out[PV_PATH_USERDIR_LENGTH - 1] = '\0';
@@ -85,12 +85,11 @@ static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], cons
 
 			out[PV_PATH_USERDIR_LENGTH - 1] = '/';
 
-			offset = 7;
+			offset++;
 			u.u8[0] = slot;
 			u.u8[1] = uak[31] ^ path_key[31];
 			u.u8[2] = uak[30] ^ path_key[30];
 		} else {
-			offset = 6;
 			u.u8[0] = uak[(i * 3) + 2] ^ path_key[(i * 3) + 2];
 			u.u8[1] = uak[(i * 3) + 1] ^ path_key[(i * 3) + 1];
 			u.u8[2] = uak[(i * 3) + 0] ^ path_key[(i * 3) + 0];
