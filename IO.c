@@ -20,8 +20,8 @@
 #define PV_BLOCKSIZE 16
 #define PV_CHUNKSIZE 16777216
 #define PV_SENDSIZE 1024
-#define PV_PATH_USERDIR_LENGTH 47
-#define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 4)
+#define PV_PATH_USERDIR_LENGTH 46
+#define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 5)
 
 static unsigned char pathKey[crypto_kdf_KEYBYTES];
 static char b64_chars[64];
