@@ -23,7 +23,7 @@
 #define PV_PATH_USERDIR_LENGTH 46
 #define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 5)
 
-static unsigned char pathKey[crypto_kdf_KEYBYTES];
+static unsigned char pv_pathKey[crypto_kdf_KEYBYTES];
 static char b64_chars[64];
 
 static int numberOfDigits(const size_t x) {
@@ -42,7 +42,7 @@ static int numberOfDigits(const size_t x) {
 
 // Generates the Base64 character set, shuffled based on the key
 void ioSetup(const unsigned char * const newPathKey) {
-	memcpy(pathKey, newPathKey, crypto_kdf_KEYBYTES);
+	memcpy(pv_pathKey, newPathKey, crypto_kdf_KEYBYTES);
 
 	const char b64_set[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_+";
 	int total = 0;
@@ -50,7 +50,7 @@ void ioSetup(const unsigned char * const newPathKey) {
 
 	for (int i = 0; total < 64; i++) {
 		uint8_t val[32];
-		crypto_kdf_derive_from_key(val, 32, i, "PV:Path1", pathKey);
+		crypto_kdf_derive_from_key(val, 32, i, "PV:Path1", pv_pathKey);
 
 		for (int j = 0; j < 32; j++) {
 			val[j] &= 63;
@@ -66,7 +66,7 @@ void ioSetup(const unsigned char * const newPathKey) {
 
 static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, char * const out) {
 	unsigned char path_key[32];
-	crypto_kdf_derive_from_key(path_key, 32, 1, "PV:Path2", pathKey);
+	crypto_kdf_derive_from_key(path_key, 32, 1, "PV:Path2", pv_pathKey);
 
 	memcpy(out, "/User/", 6);
 
