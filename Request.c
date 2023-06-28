@@ -173,7 +173,7 @@ static void respondClient(const int sock) {
 
 	const int64_t tsCurrent = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
 	const unsigned char tsRequest[8] = {req.ts[0], req.ts[1], req.ts[2], req.ts[3], req.ts[4], 0, 0, 0};
-	if (labs(tsCurrent - *(int64_t*)tsRequest) > PV_REQ_TS_MAXDIFF) {
+	if (labs(tsCurrent - *(const int64_t*)tsRequest) > PV_REQ_TS_MAXDIFF) {
 		puts("Terminating: Suspected replay attack - time difference too large");
 		return;
 	}
