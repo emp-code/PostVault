@@ -219,6 +219,11 @@ static void respondClient(const int sock) {
 		if (postBegin != NULL) {
 			if (uploadSize < 1) break;
 
+			if (mfkRepeatsChar(dec.mfk)) {
+				puts("Terminating: Weak MFK for Upload");
+				return;
+			}
+
 			postBegin += 4;
 			recv(sock, buf, postBegin - buf, MSG_WAITALL);
 			shutdown(sock, SHUT_RD);
