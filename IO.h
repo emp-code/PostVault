@@ -1,7 +1,7 @@
 #ifndef PV_IO_H
 #define PV_IO_H
 
-void ioSetup(const unsigned char * const newPathKey);
+void ioSetup(const unsigned char pathKey[crypto_kdf_KEYBYTES]);
 
 int checkUserDir(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES]);
 

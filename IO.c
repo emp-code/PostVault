@@ -20,11 +20,11 @@
 #define PV_BLOCKSIZE 16
 #define PV_CHUNKSIZE 16777216
 #define PV_SENDSIZE 1024
-#define PV_PATH_USERDIR_LENGTH 46
-#define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 5)
+#define PV_PATH_USERDIR_LENGTH 50
+#define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 3)
 
-static unsigned char pv_pathKey[crypto_kdf_KEYBYTES];
-static char b64_chars[64];
+#define PV_PATHCHARS_COUNT 80
+static char path_chars[PV_PATHCHARS_COUNT] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_+0123456789abcdef";
 
 static int numberOfDigits(const size_t x) {
 	return
@@ -40,74 +40,77 @@ static int numberOfDigits(const size_t x) {
 		10)))))))));
 }
 
-// Generates the Base64 character set, shuffled based on the key
-void ioSetup(const unsigned char * const newPathKey) {
-	memcpy(pv_pathKey, newPathKey, crypto_kdf_KEYBYTES);
-
+// Shuffles the encoded character set based on the key
+void ioSetup(const unsigned char pathKey[crypto_kdf_KEYBYTES]) {
 	const char b64_set[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_+";
 	int total = 0;
 	uint64_t done = 0;
 
-	for (int i = 0; total < 64; i++) {
+	for (int i = 0; total < PV_PATHCHARS_COUNT; i++) {
+		if (total == 64) done = 0;
+
 		uint8_t val[32];
-		crypto_kdf_derive_from_key(val, 32, i, "PV:Path1", pv_pathKey);
+		crypto_kdf_derive_from_key(val, 32, i, "PV:Path1", pathKey);
 
 		for (int j = 0; j < 32; j++) {
 			val[j] &= 63;
 
 			if (((done >> val[j]) & 1) == 0) {
-				b64_chars[total] = b64_set[val[j]];
+				path_chars[total] = b64_set[val[j]];
 				done |= (uint64_t)1 << val[j];
 				total++;
+				if (total == 64 || total == PV_PATHCHARS_COUNT) break;
 			}
 		}
 	}
 }
 
-static int getPath(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, char * const out) {
-	unsigned char path_key[32];
-	crypto_kdf_derive_from_key(path_key, 32, 1, "PV:Path2", pv_pathKey);
-
+static void getPath(const unsigned char uak[32], const int slot, char * const out) {
 	memcpy(out, "/User/", 6);
+	int offset = 6;
 
-	for (int i = 0; i < 11; i++) {
-		union {
-			uint32_t u32;
-			uint8_t u8[4];
-		} u;
+	// Base64 for the first 30 bytes of the UAK
+	for (int i = 0; i < 10; i++) {
+		uint32_t u32 = 0;
+		memcpy(&u32, uak + (i * 3), 3);
 
-		int offset = 6;
-		if (i == 10) {
-			if (slot < 0 || slot > UINT8_MAX) {
-				out[PV_PATH_USERDIR_LENGTH] = '\0';
-				return 0;
-			}
-
-			out[PV_PATH_USERDIR_LENGTH] = '/';
-
-			offset++;
-			u.u8[0] = slot;
-			u.u8[1] = uak[31] ^ path_key[31];
-			u.u8[2] = uak[30] ^ path_key[30];
-		} else {
-			u.u8[0] = uak[(i * 3) + 2] ^ path_key[(i * 3) + 2];
-			u.u8[1] = uak[(i * 3) + 1] ^ path_key[(i * 3) + 1];
-			u.u8[2] = uak[(i * 3) + 0] ^ path_key[(i * 3) + 0];
-		}
-
-		out[offset + (i * 4) + 0] = b64_chars[(u.u32 >> 18) & 63];
-		out[offset + (i * 4) + 1] = b64_chars[(u.u32 >> 12) & 63];
-		out[offset + (i * 4) + 2] = b64_chars[(u.u32 >>  6) & 63];
-		out[offset + (i * 4) + 3] = b64_chars[(u.u32 >>  0) & 63];
+		out[offset + (i * 4) + 0] = path_chars[(u32 >> 18) & 63];
+		out[offset + (i * 4) + 1] = path_chars[(u32 >> 12) & 63];
+		out[offset + (i * 4) + 2] = path_chars[(u32 >>  6) & 63];
+		out[offset + (i * 4) + 3] = path_chars[(u32 >>  0) & 63];
 	}
 
-	out[PV_PATH_USERFILE_LENGTH] = '\0';
-	return 0;
+	offset += 40;
+
+	// Hex for the last 2 bytes of the UAK
+	uint16_t u16;
+	memcpy(&u16, uak + 30, 2);
+
+	out[offset + 0] = path_chars[64 + ((u16 >> 12) & 15)];
+	out[offset + 1] = path_chars[64 + ((u16 >>  8) & 15)];
+	out[offset + 2] = path_chars[64 + ((u16 >>  4) & 15)];
+	out[offset + 3] = path_chars[64 + ((u16 >>  0) & 15)];
+
+	offset += 4;
+
+	if (slot < 0) {
+		out[offset] = '\0';
+		return;
+	}
+
+	// Slot (Base64 - 6 bits per byte x2: 12 bits)
+	out[offset] = '/';
+	offset++;
+
+	u16 = slot & 4095;
+	out[offset + 0] = path_chars[(u16 >>  6) & 63];
+	out[offset + 1] = path_chars[(u16 >>  0) & 63];
+	out[offset + 2] = '\0';
 }
 
 int checkUserDir(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES]) {
 	char path[PV_PATH_USERDIR_LENGTH + 1];
-	if (getPath(uak, -1, path) != 0) {puts("getPath() failed"); return -1;}
+	getPath(uak, -1, path);
 
 	struct statx s;
 	if (statx(0, path, AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW, STATX_MTIME, &s) == 0) {
@@ -125,7 +128,7 @@ int checkUserDir(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES]) {
 
 static int getFd(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, uint32_t * const fileBlocks, uint64_t * const fileTime, const bool replace) {
 	char path[PV_PATH_USERFILE_LENGTH + 1];
-	if (getPath(uak, slot, path) != 0) {puts("getPath() failed"); return -1;}
+	getPath(uak, slot, path);
 
 	const bool write = (fileBlocks == NULL);
 	const int fd = open(path, (write? (O_WRONLY | O_CREAT | (replace? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
@@ -337,6 +340,6 @@ void respond_getFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 
 void respond_delFile(const int sock, const int slot, const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES]) {
 	char path[PV_PATH_USERFILE_LENGTH + 1];
-	const unsigned char ret = (getPath(uak, slot, path) == 0 && unlink(path) == 0) ? 0 : 0xFF;
-	respondStatus(sock, ret, box_pk, box_sk);
+	getPath(uak, slot, path);
+	respondStatus(sock, (unlink(path) == 0) ? 0 : 0xFF, box_pk, box_sk);
 }
