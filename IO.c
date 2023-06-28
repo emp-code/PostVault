@@ -132,7 +132,7 @@ static int getFd(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const 
 
 	const bool write = (fileBlocks == NULL);
 	const int fd = open(path, (write? (O_WRONLY | O_CREAT | (replace? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
-	if (fd < 0) {puts("Failed opening file"); return -1;}
+	if (fd < 0) {perror("Failed opening file"); return -1;}
 
 	struct statx s;
 	if (statx(fd, "", AT_EMPTY_PATH, STATX_MTIME | STATX_SIZE | STATX_MODE | STATX_NLINK | STATX_UID | STATX_GID, &s) != 0) {
@@ -202,16 +202,18 @@ void respond_addFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 
 	uint64_t oldTs;
 	const int fd = getFd(uak, slot, NULL, &oldTs, replace);
-	if (fd < 0) {perror("fd failed"); return;}
+	if (fd < 0) {puts("Failed getFd"); return;}
 
 	unsigned char * const box = malloc(boxSize);
 	if (box == NULL) {
+		puts("Failed malloc");
 		close(fd);
 		return;
 	}
 
 	unsigned char * const content = malloc(contentSize);
 	if (content == NULL) {
+		puts("Failed malloc");
 		free(box);
 		close(fd);
 		return;
@@ -221,6 +223,7 @@ void respond_addFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 	while (received < boxSize) {
 		const ssize_t ret = recv(sock, box + received, boxSize - received, 0);
 		if (ret < 0) {
+			puts("Failed recv");
 			free(box);
 			free(content);
 			close(fd);
@@ -258,7 +261,7 @@ void respond_addFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 	t[1].tv_nsec = ts_file % 1000;
 
 	if (futimens(fd, t) != 0) {
-		perror("futimens");
+		perror("Failed futimens");
 		close(fd);
 		respondStatus(sock, 1, box_pk, box_sk);
 	}
