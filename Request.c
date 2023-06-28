@@ -20,6 +20,11 @@
 #define PV_REQ_LINE1_LEN 152
 #define PV_REQ_TS_MAXDIFF 30000 // in ms
 
+#define PV_MFK_LEN 32 // AES-256
+#define PV_MFK_DOWNLOAD 0xBE
+// 0xCE reserved
+#define PV_MFK_DELETE 0xDE
+
 // API box keys
 static unsigned char pv_box_pk[crypto_box_PUBLICKEYBYTES];
 static unsigned char pv_box_sk[crypto_box_SECRETKEYBYTES];
@@ -32,7 +37,7 @@ struct pv_req_dec {
 	uint16_t flag_u2: 1;
 	uint16_t flag_u3: 1;
 
-	unsigned char mfk[32]; // Mutual File Key (AES256-CTR) for the server-side encryption, only on uploads
+	unsigned char mfk[PV_MFK_LEN]; // On uploads: Mutual File Key (AES256-CTR) for the server-side encryption; otherwise, verifies type of request (Download/Delete)
 };
 
 // API Request Box
@@ -119,6 +124,14 @@ static int getUserFromId(const uint32_t id) {
 	return -1;
 }
 
+static bool mfkRepeatsChar(const unsigned char * const mfk) {
+	unsigned char c[PV_MFK_LEN - 1];
+	memset(c, mfk[0], PV_MFK_LEN - 1);
+	const bool ret = (sodium_compare(mfk + 1, c, PV_MFK_LEN - 1) == 0);
+	sodium_memzero(c, PV_MFK_LEN - 1);
+	return ret;
+}
+
 static void respondClient(const int sock) {
 	unsigned char buf[1024];
 	int lenBuf = recv(sock, buf, PV_REQ_LINE1_LEN, 0);
@@ -165,7 +178,14 @@ static void respondClient(const int sock) {
 		return;
 	}
 
-	if (memeq(buf, "GET /", 5)) return respond_getFile(sock, users[user].uak, dec.slot, req.chunk, box_pk, pv_box_sk);
+	if (memeq(buf, "GET /", 5)) {
+		if (dec.mfk[0] != PV_MFK_DOWNLOAD || !mfkRepeatsChar(dec.mfk)) {
+			puts("Terminating: Invalid MFK for Download");
+			return;
+		}
+
+		return respond_getFile(sock, users[user].uak, dec.slot, req.chunk, box_pk, pv_box_sk);
+	}
 
 	// POST request
 	if (sodium_compare(req.ts, users[user].lastMod, 5) != 1) {
@@ -186,6 +206,12 @@ static void respondClient(const int sock) {
 
 		if (uploadSize == 0) {
 			shutdown(sock, SHUT_RD);
+
+			if (dec.mfk[0] != PV_MFK_DELETE || !mfkRepeatsChar(dec.mfk)) {
+				puts("Terminating: Invalid MFK for Delete");
+				return;
+			}
+
 			return respond_delFile(sock, dec.slot, users[user].uak, box_pk, pv_box_sk);
 		}
 
