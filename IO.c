@@ -20,8 +20,9 @@
 #define PV_BLOCKSIZE 16
 #define PV_CHUNKSIZE 16777216
 #define PV_SENDSIZE 1024
-#define PV_PATH_USERDIR_LENGTH 50
-#define PV_PATH_USERFILE_LENGTH (PV_PATH_USERDIR_LENGTH + 3)
+
+#define PV_USERDIR_PATH (char[]){'/', path_chars[uid & 63], path_chars[(uid >> 6) & 63], '\0'}
+#define PV_USERFILE_PATH (char[]){'/', path_chars[uid & 63], path_chars[(uid >> 6) & 63], '/', path_chars[64 + (slot & 15)], path_chars[64 + ((slot >> 4) & 15)], path_chars[64 + ((slot >> 8) & 15)], path_chars[64 + ((slot >> 12) & 15)], '\0'}
 
 #define PV_PATHCHARS_COUNT 80
 static char path_chars[PV_PATHCHARS_COUNT] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_+0123456789abcdef";
@@ -65,59 +66,13 @@ void ioSetup(const unsigned char pathKey[crypto_kdf_KEYBYTES]) {
 	}
 }
 
-static void getPath(const unsigned char uak[32], const int slot, char * const out) {
-	memcpy(out, "/User/", 6);
-	int offset = 6;
-
-	// Base64 for the first 30 bytes of the UAK
-	for (int i = 0; i < 10; i++) {
-		uint32_t u32 = 0;
-		memcpy(&u32, uak + (i * 3), 3);
-
-		out[offset + (i * 4) + 0] = path_chars[(u32 >> 18) & 63];
-		out[offset + (i * 4) + 1] = path_chars[(u32 >> 12) & 63];
-		out[offset + (i * 4) + 2] = path_chars[(u32 >>  6) & 63];
-		out[offset + (i * 4) + 3] = path_chars[(u32 >>  0) & 63];
-	}
-
-	offset += 40;
-
-	// Hex for the last 2 bytes of the UAK
-	uint16_t u16;
-	memcpy(&u16, uak + 30, 2);
-
-	out[offset + 0] = path_chars[64 + ((u16 >> 12) & 15)];
-	out[offset + 1] = path_chars[64 + ((u16 >>  8) & 15)];
-	out[offset + 2] = path_chars[64 + ((u16 >>  4) & 15)];
-	out[offset + 3] = path_chars[64 + ((u16 >>  0) & 15)];
-
-	offset += 4;
-
-	if (slot < 0) {
-		out[offset] = '\0';
-		return;
-	}
-
-	// Slot (Base64 - 6 bits per byte x2: 12 bits)
-	out[offset] = '/';
-	offset++;
-
-	u16 = slot & 4095;
-	out[offset + 0] = path_chars[(u16 >>  6) & 63];
-	out[offset + 1] = path_chars[(u16 >>  0) & 63];
-	out[offset + 2] = '\0';
-}
-
-int checkUserDir(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES]) {
-	char path[PV_PATH_USERDIR_LENGTH + 1];
-	getPath(uak, -1, path);
-
+int checkUserDir(const uint16_t uid) {
 	struct statx s;
-	if (statx(0, path, AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW, STATX_MTIME, &s) == 0) {
+	if (statx(0, PV_USERDIR_PATH, AT_NO_AUTOMOUNT | AT_SYMLINK_NOFOLLOW, STATX_MTIME, &s) == 0) {
 		// TODO Check things
 	} else {
 		if (errno == ENOENT) {
-			if (mkdir(path, S_IRWXU) != 0) return -1;
+			if (mkdir(PV_USERDIR_PATH, S_IRWXU) != 0) return -1;
 		} else {
 			return -1;
 		}
@@ -126,12 +81,9 @@ int checkUserDir(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES]) {
 	return 0;
 }
 
-static int getFd(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, uint32_t * const fileBlocks, uint64_t * const fileTime, const bool replace) {
-	char path[PV_PATH_USERFILE_LENGTH + 1];
-	getPath(uak, slot, path);
-
+static int getFd(const uint16_t uid, const int slot, uint32_t * const fileBlocks, uint64_t * const fileTime, const bool replace) {
 	const bool write = (fileBlocks == NULL);
-	const int fd = open(path, (write? (O_WRONLY | O_CREAT | (replace? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
+	const int fd = open(PV_USERFILE_PATH, (write? (O_WRONLY | O_CREAT | (replace? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
 	if (fd < 0) {perror("Failed opening file"); return -1;}
 
 	struct statx s;
@@ -150,12 +102,12 @@ static int getFd(const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const 
 	|| s.stx_mtime.tv_nsec > 999
 	)) {
 		close(fd);
-		printf("Invalid attributes on file %s\n", path);
+		puts("Invalid file attributes");
 		return -1;
 	}
 
 	if (fileBlocks != NULL) *fileBlocks = s.stx_size / PV_BLOCKSIZE;
-	*fileTime = ((s.stx_mtime.tv_sec - PV_TS_BASE) * 1000) + s.stx_mtime.tv_nsec;
+	if (fileTime != NULL && s.stx_size != 0) *fileTime = ((s.stx_mtime.tv_sec - PV_TS_BASE) * 1000) + s.stx_mtime.tv_nsec;
 
 	return fd;
 }
@@ -181,7 +133,7 @@ static void respondStatus(const int sock, const unsigned char status, const unsi
 		send(sock, response, sizeof(response), 0);
 }
 
-static void mfk_encrypt(unsigned char * const src, const int blockCount, const unsigned char mfk[32]) {
+static void mfk_encrypt(unsigned char * const src, const int blockCount, const unsigned char mfk[PV_MFK_LEN]) {
 	unsigned char n[16];
 	bzero(n, 16);
 
@@ -196,12 +148,11 @@ static void mfk_encrypt(unsigned char * const src, const int blockCount, const u
 	sodium_memzero(&aes, sizeof(struct AES_ctx));
 }
 
-void respond_addFile(const int sock, const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, const int chunk, const unsigned char mfk[32], const bool replace, const size_t boxSize, const uint64_t ts, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES]) {
+void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot, const uint16_t chunk, const unsigned char mfk[PV_MFK_LEN], const bool replace, const size_t boxSize, uint64_t ts_file) {
 	const size_t contentSize = boxSize - crypto_box_MACBYTES;
-	if (contentSize < PV_BLOCKSIZE || (contentSize % PV_BLOCKSIZE) != 0 || contentSize > PV_CHUNKSIZE || chunk < 0 || chunk > 255) {printf("Invalid size: %zu\n", contentSize); return;}
+	if (contentSize < PV_BLOCKSIZE || (contentSize % PV_BLOCKSIZE) != 0 || contentSize > PV_CHUNKSIZE || chunk > 4095) {printf("Invalid size: %zu\n", contentSize); return;}
 
-	uint64_t oldTs;
-	const int fd = getFd(uak, slot, NULL, &oldTs, replace);
+	const int fd = getFd(uid, slot, NULL, replace? NULL : &ts_file, replace);
 	if (fd < 0) {puts("Failed getFd"); return;}
 
 	unsigned char * const box = malloc(boxSize);
@@ -256,7 +207,6 @@ void respond_addFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 	t[0].tv_sec = 0;
 	t[0].tv_nsec = UTIME_OMIT;
 
-	const uint64_t ts_file = replace? ts : oldTs;
 	t[1].tv_sec = PV_TS_BASE + ((ts_file - (ts_file % 1000)) / 1000);
 	t[1].tv_nsec = ts_file % 1000;
 
@@ -270,14 +220,15 @@ void respond_addFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 	respondStatus(sock, 0, box_pk, box_sk);
 }
 
-void respond_getFile(const int sock, const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const int slot, const unsigned int chunk, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES]) {
+void respond_getFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot, const uint16_t chunk) {
 	uint64_t fileTime;
 	uint32_t fileBlocks;
-	const int fd = getFd(uak, slot, &fileBlocks, &fileTime, false);
+	const int fd = getFd(uid, slot, &fileBlocks, &fileTime, false);
 	if (fd < 0) return;
 
 	if (chunk * PV_CHUNKSIZE > fileBlocks * PV_BLOCKSIZE) {
 		puts("Invalid size");
+		close(fd);
 		return;
 	}
 
@@ -341,8 +292,6 @@ void respond_getFile(const int sock, const unsigned char uak[crypto_aead_aes256g
 	free(response);
 }
 
-void respond_delFile(const int sock, const int slot, const unsigned char uak[crypto_aead_aes256gcm_KEYBYTES], const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES]) {
-	char path[PV_PATH_USERFILE_LENGTH + 1];
-	getPath(uak, slot, path);
-	respondStatus(sock, (unlink(path) == 0) ? 0 : 0xFF, box_pk, box_sk);
+void respond_delFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot) {
+	respondStatus(sock, (unlink(PV_USERFILE_PATH) == 0) ? 0 : 0xFF, box_pk, box_sk);
 }
