@@ -5,7 +5,7 @@
 
 PostVault is an encrypted storage server designed to complement All-Ears Mail, with the same privacy goal: the server knows as little as possible about its users, and keeps what it knows as private as it can.
 
-The server simply provides a secure API to upload/download/delete a file in a slot (0-4095). Everything else, including filenames and other metadata, is left to clients. This minimal role of the server limits the server's knowledge to the bare minimum.
+The server simply provides a secure API to upload/download/delete a file in a slot (0-65535). Everything else, including filenames and other metadata, is left to clients. This minimal role of the server limits the server's knowledge to the bare minimum.
 
 Clients are expected to use client-side encryption, but upload requests must also contain a key for the server-side AES256-CTR encryption, ensuring no data is ever stored unencrypted. For downloads, clients are required to decrypt the data themselves.
 
