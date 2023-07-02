@@ -186,7 +186,7 @@ void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLI
 
 	unsigned char box_nonce[crypto_box_NONCEBYTES];
 	memset(box_nonce, 2, crypto_box_NONCEBYTES);
-	if (crypto_box_open_easy((unsigned char*)postBox, box, boxSize, box_nonce, box_pk, box_sk) != 0) {
+	if (crypto_box_open_easy(postBox, box, boxSize, box_nonce, box_pk, box_sk) != 0) {
 		puts("Failed opening postBox");
 		return;
 	}
