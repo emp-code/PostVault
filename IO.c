@@ -20,6 +20,7 @@
 #define PV_BLOCKSIZE 16
 #define PV_CHUNKSIZE 16777216
 #define PV_SENDSIZE 1024
+#define PV_MFK_LEN 32 // AES-256
 
 #define PV_USERDIR_PATH (char[]){'/', path_chars[uid & 63], path_chars[(uid >> 6) & 63], '\0'}
 #define PV_USERFILE_PATH (char[]){'/', path_chars[uid & 63], path_chars[(uid >> 6) & 63], '/', path_chars[64 + (slot & 15)], path_chars[64 + ((slot >> 4) & 15)], path_chars[64 + ((slot >> 8) & 15)], path_chars[64 + ((slot >> 12) & 15)], '\0'}
@@ -81,9 +82,9 @@ int checkUserDir(const uint16_t uid) {
 	return 0;
 }
 
-static int getFd(const uint16_t uid, const int slot, uint32_t * const fileBlocks, uint64_t * const fileTime, const bool replace) {
+static int getFd(const uint16_t uid, const int slot, uint32_t * const fileBlocks, uint64_t * const fileTime, const bool keep) {
 	const bool write = (fileBlocks == NULL);
-	const int fd = open(PV_USERFILE_PATH, (write? (O_WRONLY | O_CREAT | (replace? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
+	const int fd = open(PV_USERFILE_PATH, (write? (O_WRONLY | O_CREAT | (keep? 0 : O_TRUNC)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
 	if (fd < 0) {perror("Failed opening file"); return -1;}
 
 	struct statx s;
@@ -148,24 +149,16 @@ static void mfk_encrypt(unsigned char * const src, const int blockCount, const u
 	sodium_memzero(&aes, sizeof(struct AES_ctx));
 }
 
-void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot, const uint16_t chunk, const unsigned char mfk[PV_MFK_LEN], const bool replace, const size_t boxSize, uint64_t ts_file) {
-	const size_t contentSize = boxSize - crypto_box_MACBYTES;
+void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t boxSize, uint64_t ts_file) {
+	const size_t contentSize = boxSize - crypto_box_MACBYTES - PV_MFK_LEN;
 	if (contentSize < PV_BLOCKSIZE || (contentSize % PV_BLOCKSIZE) != 0 || contentSize > PV_CHUNKSIZE || chunk > 4095) {printf("Invalid size: %zu\n", contentSize); return;}
 
-	const int fd = getFd(uid, slot, NULL, replace? NULL : &ts_file, replace);
+	const int fd = getFd(uid, slot, NULL, keep? &ts_file : NULL, keep);
 	if (fd < 0) {puts("Failed getFd"); return;}
 
 	unsigned char * const box = malloc(boxSize);
 	if (box == NULL) {
 		puts("Failed malloc");
-		close(fd);
-		return;
-	}
-
-	unsigned char * const content = malloc(contentSize);
-	if (content == NULL) {
-		puts("Failed malloc");
-		free(box);
 		close(fd);
 		return;
 	}
@@ -176,7 +169,6 @@ void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLI
 		if (ret < 0) {
 			puts("Failed recv");
 			free(box);
-			free(content);
 			close(fd);
 			return;
 		}
@@ -184,24 +176,35 @@ void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLI
 		received += ret;
 	}
 
-	unsigned char box_nonce[crypto_box_NONCEBYTES];
-	memset(box_nonce, 2, crypto_box_NONCEBYTES);
-	if (crypto_box_open_easy(content, box, boxSize, box_nonce, box_pk, box_sk) != 0) {
-		puts("Failed opening postbox");
+	unsigned char * const postBox = malloc(PV_MFK_LEN + contentSize);
+	if (postBox == NULL) {
+		puts("Failed malloc");
+		free(box);
+		close(fd);
 		return;
 	}
 
+	unsigned char box_nonce[crypto_box_NONCEBYTES];
+	memset(box_nonce, 2, crypto_box_NONCEBYTES);
+	if (crypto_box_open_easy((unsigned char*)postBox, box, boxSize, box_nonce, box_pk, box_sk) != 0) {
+		puts("Failed opening postBox");
+		return;
+	}
 	free(box);
+
+	const unsigned char * const mfk = postBox;
+	unsigned char * const content = postBox + PV_MFK_LEN;
+
 	mfk_encrypt(content, contentSize / PV_BLOCKSIZE, mfk);
 
 	if (pwrite(fd, content, contentSize, chunk * PV_CHUNKSIZE) != (off_t)contentSize) {
 		close(fd);
-		free(content);
+		free(postBox);
 		puts("Failed writing file");
 		return;
 	}
 
-	free(content);
+	free(postBox);
 
 	struct timespec t[2];
 	t[0].tv_sec = 0;
