@@ -57,6 +57,25 @@ struct pv_user {
 	uint8_t u2: 4;
 };
 
+const int64_t expiration_times[] = { // in ms
+	300000, // 5 minutes
+	900000, // 15 minutes
+	3600000, // 1 hour
+	14400000, // 4 hours
+	43200000, // 12 hours
+	86400000, // 24 hours
+	259200000, // 3 days
+	604800000, // 7 days
+	1209600000, // 2 weeks
+	2629746000, // 1 month
+	7889238000, // 3 months
+	15778476000, // 6 months
+	31556952000, // 1 year
+	63113904000, // 2 years
+	157784760000, // 5 years
+	9999999999999 // infinite
+};
+
 static struct pv_user users[4096];
 
 static int loadUsers(const unsigned char sfk[crypto_aead_xchacha20poly1305_ietf_KEYBYTES]) {
@@ -153,10 +172,12 @@ static void respondClient(const int sock) {
 
 	const int64_t tsCurrent = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
 	const int64_t tsRequest = req.binTs;
-	if ((dec.flags & PV_FLAG_SHARED) == 0 && labs(tsCurrent - tsRequest) > PV_REQ_TS_MAXDIFF) {
-		puts("Terminating: Suspected replay attack - time difference too large");
-		return;
-	}
+	if ((dec.flags & PV_FLAG_SHARED) == 0) {
+		if (labs(tsCurrent - tsRequest) > PV_REQ_TS_MAXDIFF) {
+			puts("Terminating: Suspected replay attack - time difference too large");
+			return;
+		}
+	} else if (tsCurrent > tsRequest + expiration_times[(dec.flags >> 1) & 15]) return; // Expired shared link
 
 	if (memeq(buf, "GET /", 5)) {
 		if (dec.cmd == PV_CMD_DOWNLOAD) {
