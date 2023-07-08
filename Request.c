@@ -20,6 +20,7 @@
 #define PV_REQ_LINE1_LEN 152
 #define PV_REQ_TS_MAXDIFF 30000 // in ms
 
+#define PV_FLAG_SHARED 1
 #define PV_FLAG_KEEP 2
 
 #define PV_CMD_DOWNLOAD 0
@@ -52,8 +53,8 @@ struct pv_user {
 	unsigned char lastMod[5]; // To protect against replay attacks
 	unsigned char c1[5];
 	uint8_t level: 2;
-	uint8_t u1: 4;
-	uint8_t u2: 2;
+	uint8_t u1: 2;
+	uint8_t u2: 4;
 };
 
 static struct pv_user users[4096];
@@ -145,9 +146,14 @@ static void respondClient(const int sock) {
 		return;
 	}
 
+	if ((dec.flags & PV_FLAG_SHARED) != 0 && dec.cmd != PV_CMD_DOWNLOAD) {
+		puts("Terminating: Shared flag on non-download request");
+		return;
+	}
+
 	const int64_t tsCurrent = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
 	const int64_t tsRequest = req.binTs;
-	if (labs(tsCurrent - tsRequest) > PV_REQ_TS_MAXDIFF) {
+	if ((dec.flags & PV_FLAG_SHARED) == 0 && labs(tsCurrent - tsRequest) > PV_REQ_TS_MAXDIFF) {
 		puts("Terminating: Suspected replay attack - time difference too large");
 		return;
 	}
