@@ -14,13 +14,6 @@
 
 #include "IO.h"
 
-#define PV_TS_BASE 946684800 // 2020-01-01 00:00:00
-#define PV_TS_MAX  1099511627
-#define PV_BLOCKSIZE 16
-#define PV_CHUNKSIZE 16777216
-#define PV_SENDSIZE 1024
-#define PV_MFK_LEN 32 // AES-256
-
 #define PV_USERDIR_PATH (char[]){'/', path_chars[uid & 63], path_chars[(uid >> 6) & 63], '\0'}
 #define PV_USERFILE_PATH (char[]){'/', path_chars[uid & 63], path_chars[(uid >> 6) & 63], '/', path_chars[64 + (slot & 15)], path_chars[64 + ((slot >> 4) & 15)], path_chars[64 + ((slot >> 8) & 15)], path_chars[64 + ((slot >> 12) & 15)], '\0'}
 
@@ -144,9 +137,6 @@ static void mfk_encrypt(unsigned char * const src, const int blockCount, const u
 }
 
 void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t encSize, uint64_t ts_file, const unsigned char bodyKey[crypto_aead_aegis256_KEYBYTES], const unsigned char responseKey[1 + crypto_onetimeauth_KEYBYTES]) {
-	const size_t contentSize = encSize - crypto_aead_aegis256_ABYTES - PV_MFK_LEN;
-	if (contentSize < PV_BLOCKSIZE || (contentSize % PV_BLOCKSIZE) != 0 || contentSize > PV_CHUNKSIZE || chunk > 4095) {printf("Invalid size: %zu\n", contentSize); return;}
-
 	const int fd = getFd(uid, slot, NULL, keep? &ts_file : NULL, keep);
 	if (fd < 0) {puts("Failed getFd"); return;}
 
@@ -170,7 +160,7 @@ void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, co
 		received += ret;
 	}
 
-	unsigned char * const dec = malloc(PV_MFK_LEN + contentSize);
+	unsigned char * const dec = malloc(encSize - crypto_aead_aegis256_ABYTES);
 	if (dec == NULL) {
 		puts("Failed malloc");
 		free(enc);
@@ -190,12 +180,12 @@ void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, co
 
 	free(enc);
 
-	const unsigned char * const mfk = dec;
+	const size_t lenContent = encSize - crypto_aead_aegis256_ABYTES - PV_MFK_LEN;
 	unsigned char * const content = dec + PV_MFK_LEN;
 
-	mfk_encrypt(content, contentSize / PV_BLOCKSIZE, mfk);
+	mfk_encrypt(content, lenContent / PV_BLOCKSIZE, dec);
 
-	if (pwrite(fd, content, contentSize, chunk * PV_CHUNKSIZE) != (off_t)contentSize) {
+	if (pwrite(fd, content, lenContent, chunk * PV_CHUNKSIZE) != (off_t)lenContent) {
 		perror("Failed writing file");
 		close(fd);
 		free(dec);

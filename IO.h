@@ -11,6 +11,13 @@
 	#define crypto_aead_aegis256_encrypt   crypto_aead_chacha20poly1305_encrypt
 #endif
 
+#define PV_TS_BASE 946684800 // 2020-01-01 00:00:00
+#define PV_TS_MAX  1099511627
+#define PV_BLOCKSIZE 16
+#define PV_CHUNKSIZE 16777216
+#define PV_SENDSIZE 1024
+#define PV_MFK_LEN 32 // AES-256
+
 void ioSetup(const unsigned char pathKey[crypto_kdf_KEYBYTES]);
 
 int checkUserDir(const uint16_t uid);
