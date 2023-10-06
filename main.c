@@ -14,6 +14,8 @@
 #include <sys/types.h>
 #include <unistd.h>
 
+#include <sodium.h>
+
 #include "Request.h"
 
 static int setCaps(void) {
@@ -43,6 +45,8 @@ static int setCaps(void) {
 }
 
 int main(void) {
+	if (sodium_init() == -1) return 1;
+
 	setlocale(LC_ALL, "C");
 
 	if (unshare(
@@ -66,7 +70,7 @@ int main(void) {
 	if (chroot("/var/lib/PostVault") != 0 || chdir("/") != 0) return 8;
 
 	const int sock = pv_init();
-	if (sock < 0) return 9;
+	if (sock < 0) return 50 + abs(sock);
 
 	if (setgroups(0, NULL) != 0
 	|| setgid(p->pw_gid) != 0

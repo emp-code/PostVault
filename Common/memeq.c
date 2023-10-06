@@ -37,9 +37,9 @@ const unsigned char *memcasemem(const unsigned char * const hay, const size_t le
 	return NULL;
 }
 
-const unsigned char *mempbrk(const unsigned char * const hay, const size_t lenHay, const unsigned char needle[], const int lenNeedle) {
+const unsigned char *mempbrk(const unsigned char * const hay, const size_t lenHay, const unsigned char needle[], const size_t lenNeedle) {
 	for (size_t i = 0; i < lenHay; i++) {
-		for (int j = 0; j < lenNeedle; j++) {
+		for (size_t j = 0; j < lenNeedle; j++) {
 			if (hay[i] == needle[j]) return hay + i;
 		}
 	}

@@ -1,12 +1,22 @@
 #ifndef PV_IO_H
 #define PV_IO_H
 
+// Allow compiling on libsodium <1.0.19
+#ifndef crypto_aead_aegis256_ABYTES
+	#warning Missing AEGIS-256 support
+	#define crypto_aead_aegis256_ABYTES    crypto_aead_chacha20poly1305_ABYTES
+	#define crypto_aead_aegis256_KEYBYTES  crypto_aead_chacha20poly1305_KEYBYTES
+	#define crypto_aead_aegis256_NPUBBYTES crypto_aead_chacha20poly1305_NPUBBYTES
+	#define crypto_aead_aegis256_decrypt   crypto_aead_chacha20poly1305_decrypt
+	#define crypto_aead_aegis256_encrypt   crypto_aead_chacha20poly1305_encrypt
+#endif
+
 void ioSetup(const unsigned char pathKey[crypto_kdf_KEYBYTES]);
 
 int checkUserDir(const uint16_t uid);
 
-void respond_addFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t boxSize, uint64_t ts_file);
-void respond_getFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot, const uint16_t chunk);
-void respond_delFile(const int sock, const unsigned char box_pk[crypto_box_PUBLICKEYBYTES], const unsigned char box_sk[crypto_box_SECRETKEYBYTES], const uint16_t uid, const uint16_t slot);
+void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t encSize, uint64_t ts_file, const unsigned char bodyKey[crypto_aead_aegis256_KEYBYTES], const unsigned char responseKey[1 + crypto_onetimeauth_KEYBYTES]);
+void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk, const unsigned char responseKey[crypto_aead_aegis256_KEYBYTES]);
+void respond_delFile(const int sock, const uint16_t uid, const uint16_t slot, const unsigned char responseKey[1 + crypto_onetimeauth_KEYBYTES]);
 
 #endif
