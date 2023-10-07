@@ -88,7 +88,7 @@ static int getFd(const uint16_t uid, const int slot, uint32_t * const fileBlocks
 
 	if (!write && (
 	   s.stx_size < PV_BLOCKSIZE
-	|| s.stx_size / PV_BLOCKSIZE > 268435456 // 2^28
+	|| s.stx_size / PV_BLOCKSIZE > UINT32_MAX
 	|| s.stx_size % PV_BLOCKSIZE != 0
 	|| s.stx_mtime.tv_sec < PV_TS_BASE
 	|| s.stx_mtime.tv_sec > PV_TS_BASE + PV_TS_MAX
@@ -121,7 +121,7 @@ static void respondStatus(const int sock, const unsigned char status, const unsi
 	send(sock, response, 107, 0);
 }
 
-static void mfk_encrypt(unsigned char * const src, const int blockCount, const unsigned char mfk[PV_MFK_LEN]) {
+static void mfk_encrypt(unsigned char * const src, const unsigned int blockCount, const unsigned char mfk[PV_MFK_LEN]) {
 	unsigned char n[16];
 	bzero(n, 16);
 
@@ -218,18 +218,19 @@ void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, co
 	const int fd = getFd(uid, slot, &fileBlocks, &fileTime, false);
 	if (fd < 0) return;
 
-	if (chunk * PV_CHUNKSIZE > fileBlocks * PV_BLOCKSIZE) {
+	const size_t startOffset = chunk * PV_CHUNKSIZE;
+	if (startOffset > fileBlocks * PV_BLOCKSIZE) {
 		puts("Invalid size");
 		close(fd);
 		return;
 	}
 
-	const off_t lenMax = (fileBlocks * PV_BLOCKSIZE) - (chunk * PV_CHUNKSIZE);
+	const off_t lenMax = (fileBlocks * PV_BLOCKSIZE) - startOffset;
 	const off_t lenRead = (lenMax > PV_CHUNKSIZE) ? PV_CHUNKSIZE : lenMax;
 	const size_t lenRaw = 9 + lenRead;
 	unsigned char * const rawData = malloc(lenRaw);
 
-	const off_t bytesRead = pread(fd, rawData + 9, lenRead, chunk * PV_CHUNKSIZE);
+	const off_t bytesRead = pread(fd, rawData + 9, lenRead, startOffset);
 	close(fd);
 
 	if (bytesRead != lenRead) {
