@@ -153,7 +153,7 @@ static void respondClient(const int sock) {
 	}
 
 	// Check timestamp
-	const int64_t tsNow = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
+	const int64_t tsNow = ((int64_t)time(NULL) * 1000) & ((1L << 40) - 1);
 	const int64_t tsReq = req.binTs;
 	if ((req.flags & PV_FLAG_SHARED) == 0) {
 		if (labs(tsNow - tsReq) > PV_REQ_TS_MAXDIFF) {
