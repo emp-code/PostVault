@@ -47,7 +47,7 @@ struct pv_req {
 	unsigned char padding[5];
 };
 
-const int64_t expiration_times[] = { // in ms
+static const int64_t expiration_times[] = { // in ms
 	300000, // 5 minutes
 	900000, // 15 minutes
 	3600000, // 1 hour
