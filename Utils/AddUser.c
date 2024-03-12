@@ -38,13 +38,13 @@ int main(int argc, char *argv[]) {
 	if (getKey(smk, AEM_SECURITY_MASTERKEY_LEN) != 0) return -1;
 
 	// Get the Server File Key
-	unsigned char sfk[crypto_aead_xchacha20poly1305_ietf_KEYBYTES];
-	aem_security_kdf(sfk, crypto_aead_xchacha20poly1305_ietf_KEYBYTES, smk, AEM_SECURITY_KEYID_SERVER_FILE);
+	unsigned char sfk[crypto_aead_aegis256_KEYBYTES];
+	aem_security_kdf(sfk, crypto_aead_aegis256_KEYBYTES, smk, AEM_SECURITY_KEYID_SMK_PV_FILE);
 	sodium_memzero(smk, AEM_SECURITY_MASTERKEY_LEN);
 
 	// Load the user data
 	struct pv_user users[4096];
-	const size_t lenEnc = crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + (sizeof(struct pv_user) * 4096) + crypto_aead_xchacha20poly1305_ietf_ABYTES;
+	const size_t lenEnc = crypto_aead_aegis256_NPUBBYTES + (sizeof(struct pv_user) * 4096) + crypto_aead_aegis256_ABYTES;
 	unsigned char enc[lenEnc];
 	if (read(fd, enc, lenEnc) != lenEnc) {
 		printf("Failed reading %s\n", argv[1]);
@@ -52,7 +52,7 @@ int main(int argc, char *argv[]) {
 		return 1;
 	}
 
-	if (crypto_aead_xchacha20poly1305_ietf_decrypt((unsigned char*)users, NULL, NULL, enc + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, lenEnc - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, NULL, 0, enc, sfk) != 0) {
+	if (crypto_aead_aegis256_decrypt((unsigned char*)users, NULL, NULL, enc + crypto_aead_aegis256_NPUBBYTES, lenEnc - crypto_aead_aegis256_NPUBBYTES, NULL, 0, enc, sfk) != 0) {
 		puts("Failed decrypting data. Incorrect SMK?");
 		close(fd);
 		return 1;
@@ -72,7 +72,7 @@ int main(int argc, char *argv[]) {
 
 	for(;;) {
 		randombytes_buf(new_umk, AEM_SECURITY_MASTERKEY_LEN);
-		aem_security_kdf(new_uak, AEM_SECURITY_UAK_LEN, new_umk, AEM_SECURITY_KEYID_USER_UAK);
+		aem_security_kdf(new_uak, AEM_SECURITY_UAK_LEN, new_umk, AEM_SECURITY_KEYID_UMK_UAK);
 		if (aem_security_uid(new_uak) == desired_uid) break;
 	}
 
@@ -84,10 +84,10 @@ int main(int argc, char *argv[]) {
 	sodium_memzero(new_uak, AEM_SECURITY_UAK_LEN);
 
 	// Encrypt the user data
-	randombytes_buf(enc, crypto_aead_xchacha20poly1305_ietf_NPUBBYTES);
-	crypto_aead_xchacha20poly1305_ietf_encrypt(enc + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, NULL, (unsigned char*)users, sizeof(struct pv_user) * 4096, NULL, 0, NULL, enc, sfk);
+	randombytes_buf(enc, crypto_aead_aegis256_NPUBBYTES);
+	crypto_aead_aegis256_encrypt(enc + crypto_aead_aegis256_NPUBBYTES, NULL, (unsigned char*)users, sizeof(struct pv_user) * 4096, NULL, 0, NULL, enc, sfk);
 	sodium_memzero((unsigned char*)users, sizeof(struct pv_user) * 4096);
-	sodium_memzero(sfk, crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
+	sodium_memzero(sfk, crypto_aead_aegis256_KEYBYTES);
 
 	// Write the user data and close the file
 	if (pwrite(fd, enc, lenEnc, 0) != lenEnc) perror("write");

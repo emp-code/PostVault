@@ -19,7 +19,7 @@
 
 #include "Request.h"
 
-#define PV_REQ_LINE1_LEN 106
+#define PV_REQ_LINE1_LEN 42
 #define PV_REQ_TS_MAXDIFF 30000 // in ms
 
 #define PV_FLAG_SHARED 1
@@ -30,11 +30,9 @@
 #define PV_CMD_DELETE   2
 //#define PV_CMD_       3
 
-static unsigned char pv_api_pk[crypto_scalarmult_BYTES];
-static unsigned char pv_api_sk[crypto_scalarmult_SCALARBYTES];
-
 // API request container
-#define PV_REQ_INTERIOR_OFFSET 8
+#define PV_REQ_ENC_OFFSET 8
+#define PV_REQ_ENC_LENGTH 3
 struct pv_req {
 	uint64_t binTs: 40;
 	uint64_t userId: 12;
@@ -45,6 +43,8 @@ struct pv_req {
 	uint8_t flags: 6;
 	uint8_t cmd: 2;
 	unsigned char mac[crypto_onetimeauth_BYTES];
+
+	unsigned char padding[5];
 };
 
 const int64_t expiration_times[] = { // in ms
@@ -68,11 +68,11 @@ const int64_t expiration_times[] = { // in ms
 
 static struct pv_user user[PV_USERCOUNT];
 
-static int loadUsers(const unsigned char sfk[crypto_aead_xchacha20poly1305_ietf_KEYBYTES]) {
+static int loadUsers(const unsigned char sfk[crypto_aead_aegis256_KEYBYTES]) {
 	const int fd = open("/Users.pv", O_RDONLY | O_NOCTTY);
 	if (fd < 0) {puts("Failed opening Users.pv"); return -1;}
 
-	const size_t lenEnc = crypto_aead_xchacha20poly1305_ietf_NPUBBYTES + (sizeof(struct pv_user) * PV_USERCOUNT) + crypto_aead_xchacha20poly1305_ietf_ABYTES;
+	const size_t lenEnc = crypto_aead_aegis256_NPUBBYTES + (sizeof(struct pv_user) * PV_USERCOUNT) + crypto_aead_aegis256_ABYTES;
 	if (lseek(fd, 0, SEEK_END) != lenEnc) {puts("Incorrect size for Users.pv"); close(fd); return -1;}
 
 	unsigned char enc[lenEnc];
@@ -80,7 +80,7 @@ static int loadUsers(const unsigned char sfk[crypto_aead_xchacha20poly1305_ietf_
 	close(fd);
 	if (readBytes != lenEnc) {puts("Failed to read Users.pv"); return -1;}
 
-	if (crypto_aead_xchacha20poly1305_ietf_decrypt((unsigned char*)user, NULL, NULL, enc + crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, lenEnc - crypto_aead_xchacha20poly1305_ietf_NPUBBYTES, NULL, 0, enc, sfk) != 0) {
+	if (crypto_aead_aegis256_decrypt((unsigned char*)user, NULL, NULL, enc + crypto_aead_aegis256_NPUBBYTES, lenEnc - crypto_aead_aegis256_NPUBBYTES, NULL, 0, enc, sfk) != 0) {
 		puts("Failed decrypting Users.pv");
 		return -1;
 	}
@@ -92,21 +92,18 @@ int pv_init(void) {
 	unsigned char smk[AEM_SECURITY_MASTERKEY_LEN];
 	if (getKey(smk, AEM_SECURITY_MASTERKEY_LEN) != 0) return -1;
 
-	aem_security_kdf(pv_api_sk, crypto_scalarmult_SCALARBYTES, smk, AEM_SECURITY_KEYID_SERVER_API);
-	crypto_scalarmult_base(pv_api_pk, pv_api_sk);
-
-	unsigned char pathKey[crypto_kdf_KEYBYTES];
-	aem_security_kdf(pathKey, crypto_kdf_KEYBYTES, smk, AEM_SECURITY_KEYID_SERVER_PATH);
+	unsigned char pathKey[PV_PATHKEY_LEN];
+	aem_security_kdf(pathKey, PV_PATHKEY_LEN, smk, AEM_SECURITY_KEYID_SMK_PV_PATH);
 	ioSetup(pathKey);
-	sodium_memzero(pathKey, crypto_kdf_KEYBYTES);
+	sodium_memzero(pathKey, PV_PATHKEY_LEN);
 
-	unsigned char sfk[crypto_aead_xchacha20poly1305_ietf_KEYBYTES];
-	aem_security_kdf(sfk, crypto_aead_xchacha20poly1305_ietf_KEYBYTES, smk, AEM_SECURITY_KEYID_SERVER_FILE);
+	unsigned char sfk[crypto_aead_aegis256_KEYBYTES];
+	aem_security_kdf(sfk, crypto_aead_aegis256_KEYBYTES, smk, AEM_SECURITY_KEYID_SMK_PV_FILE);
 
 	sodium_memzero(smk, AEM_SECURITY_MASTERKEY_LEN);
 
 	const int ret = loadUsers(sfk);
-	sodium_memzero(sfk, crypto_aead_xchacha20poly1305_ietf_KEYBYTES);
+	sodium_memzero(sfk, crypto_aead_aegis256_KEYBYTES);
 	if (ret == -1) return -2;
 
 	for (int uid = 0; uid < PV_USERCOUNT; uid++) {
@@ -114,25 +111,6 @@ int pv_init(void) {
 	}
 
 	return createSocket(PV_PORT);
-}
-
-static void getSecretHash(unsigned char * const secret_hash, const size_t size, const unsigned char * const shared_secret, const unsigned char * const client_pk, const int variation) {
-	unsigned char base[crypto_scalarmult_BYTES * 3];
-	if (variation == 0) {
-		memcpy(base, shared_secret, crypto_scalarmult_BYTES);
-		memcpy(base + crypto_scalarmult_BYTES, client_pk, crypto_scalarmult_BYTES);
-		memcpy(base + crypto_scalarmult_BYTES * 2, pv_api_pk, crypto_scalarmult_BYTES);
-	} else if (variation == 1) {
-		memcpy(base, shared_secret, crypto_scalarmult_BYTES);
-		memcpy(base + crypto_scalarmult_BYTES, pv_api_pk, crypto_scalarmult_BYTES);
-		memcpy(base + crypto_scalarmult_BYTES * 2, client_pk, crypto_scalarmult_BYTES);
-	} else {
-		memcpy(base, client_pk, crypto_scalarmult_BYTES);
-		memcpy(base + crypto_scalarmult_BYTES, pv_api_pk, crypto_scalarmult_BYTES);
-		memcpy(base + crypto_scalarmult_BYTES * 2, shared_secret, crypto_scalarmult_BYTES);
-	}
-
-	crypto_generichash(secret_hash, size, base, crypto_scalarmult_BYTES * 3, NULL, 0);
 }
 
 static void respondClient(const int sock) {
@@ -147,71 +125,52 @@ static void respondClient(const int sock) {
 	else if (memeq(buf, "POST /", 6)) b64_begin = buf + 6;
 	else {puts("Terminating: Invalid request"); return;}
 
-	// Decode: Base64
-	unsigned char raw[75];
+	// Decode Base64
+	struct pv_req req;
 	size_t lenRaw = 0;
-	sodium_base642bin(raw, 75, (const char*)b64_begin, 100, NULL, &lenRaw, NULL, sodium_base64_VARIANT_URLSAFE);
-	if (lenRaw != 75) {puts("Terminating: Failed decoding Base64"); return;}
+	sodium_base642bin((unsigned char*)&req, 27, (const char*)b64_begin, 36, NULL, &lenRaw, NULL, sodium_base64_VARIANT_URLSAFE);
+	if (lenRaw != 27) {puts("Terminating: Failed decoding Base64"); return;}
 
-	// Key exchange: X25519 & BLAKE2b
-	unsigned char shared_secret[crypto_scalarmult_BYTES];
-	if (crypto_scalarmult(shared_secret, pv_api_sk, raw + 43) != 0) {  // 75 - 32 = 43 (client pk)
-		puts("Terminating: Failed X25519");
-		return;
-	}
+	// Verify user
+	if (sodium_is_zero(user[req.userId].uak, AEM_SECURITY_UAK_LEN)) {printf("Terminating: Unrecognized user: %u\n", req.userId); return;}
 
-	unsigned char secret_hash[27 + crypto_onetimeauth_KEYBYTES];
-	getSecretHash(secret_hash, 27 + crypto_onetimeauth_KEYBYTES, shared_secret, raw + 43, 0);
-
-	// Authenticate: Poly1305
-	if (crypto_onetimeauth_verify(raw + 27, raw, 27, secret_hash + 27) != 0) {
+	// Authenticate
+	unsigned char secret_hash[PV_REQ_ENC_LENGTH + crypto_onetimeauth_KEYBYTES];
+	crypto_generichash(secret_hash, PV_REQ_ENC_LENGTH + crypto_onetimeauth_KEYBYTES, (unsigned char*)&req, 5, user[req.userId].uak, AEM_SECURITY_UAK_LEN);
+	if (crypto_onetimeauth_verify(req.mac, (unsigned char*)&req + PV_REQ_ENC_OFFSET, PV_REQ_ENC_LENGTH, secret_hash + PV_REQ_ENC_LENGTH) != 0) {
 		puts("Terminating: Failed authentication");
 		return;
 	}
 
-	// Decrypt: XOR with secret hash
-	struct pv_req req;
-	for (int i = 0; i < 27; i++) {
-		((unsigned char*)&req)[i] = raw[i] ^ secret_hash[i];
-	}
-
-	if (sodium_is_zero(user[req.userId].uak, AEM_SECURITY_UAK_LEN)) {printf("Terminating: Unrecognized user: %u\n", req.userId); return;}
-
-// Decrypt and authenticate the interior container
-	crypto_generichash(secret_hash, 3 + crypto_onetimeauth_KEYBYTES, (unsigned char*)&req, 5, user[req.userId].uak, AEM_SECURITY_UAK_LEN);
-	if (crypto_onetimeauth_verify(req.mac, (unsigned char*)&req.slot, 3, secret_hash + 3) != 0) {
-		puts("Terminating: Failed inner authentication");
-		return;
-	}
-
-	((unsigned char*)&req)[PV_REQ_INTERIOR_OFFSET + 0] ^= secret_hash[0];
-	((unsigned char*)&req)[PV_REQ_INTERIOR_OFFSET + 1] ^= secret_hash[1];
-	((unsigned char*)&req)[PV_REQ_INTERIOR_OFFSET + 2] ^= secret_hash[2];
+	// Decrypt
+	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 0] ^= secret_hash[0];
+	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 1] ^= secret_hash[1];
+	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 2] ^= secret_hash[2];
 
 	if ((req.flags & PV_FLAG_SHARED) != 0 && req.cmd != PV_CMD_DOWNLOAD) {
 		puts("Terminating: Shared flag on non-download request");
 		return;
 	}
 
-	const int64_t tsCurrent = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
-	const int64_t tsRequest = req.binTs;
+	// Check timestamp
+	const int64_t tsNow = ((int64_t)time(NULL) * 1000) & ((1l << 40) - 1);
+	const int64_t tsReq = req.binTs;
 	if ((req.flags & PV_FLAG_SHARED) == 0) {
-		if (labs(tsCurrent - tsRequest) > PV_REQ_TS_MAXDIFF) {
+		if (labs(tsNow - tsReq) > PV_REQ_TS_MAXDIFF) {
 			puts("Terminating: Suspected replay attack - time difference too large");
 			return;
 		}
-	} else if (tsCurrent > tsRequest + expiration_times[(req.flags >> 1) & 15]) {
+	} else if (tsNow > tsReq + expiration_times[(req.flags >> 1) & 15]) {
 		puts("Terminating: Expired shared link");
 		return;
 	}
 
+	// Take action
 	if (memeq(buf, "GET /", 5)) {
 		if (req.cmd == PV_CMD_DOWNLOAD) {
-			getSecretHash(secret_hash, crypto_aead_aegis256_KEYBYTES, shared_secret, raw + 43, 2);
-			respond_getFile(sock, req.userId, req.slot, req.chunk, secret_hash);
+			respond_getFile(sock, req.userId, req.slot, req.chunk);
 		} else if (req.cmd == PV_CMD_DELETE) {
-			getSecretHash(secret_hash, 1 + crypto_onetimeauth_KEYBYTES, shared_secret, raw + 43, 2);
-			respond_delFile(sock, req.userId, req.slot, secret_hash);
+			respond_delFile(sock, req.userId, req.slot);
 		} else {
 			puts("Terminating: Invalid GET request");
 		}
@@ -237,7 +196,7 @@ static void respondClient(const int sock) {
 
 		const unsigned char * const cl = memcasemem(buf, lenBuf, "Content-Length:", 15);
 		const long uploadSize = (cl != NULL && memchr(cl + 15, '\r', (buf + lenBuf) - (cl + 15)) != NULL) ? strtol((const char*)cl + 15, NULL, 10) : -1;
-		if (uploadSize < PV_BLOCKSIZE + crypto_aead_aegis256_ABYTES + PV_MFK_LEN || (uploadSize - crypto_aead_aegis256_ABYTES - PV_MFK_LEN) % PV_BLOCKSIZE != 0 || uploadSize > PV_CHUNKSIZE + crypto_aead_aegis256_ABYTES + PV_MFK_LEN) {
+		if (uploadSize < PV_BLOCKSIZE + PV_MFK_LEN || (uploadSize - PV_MFK_LEN) % PV_BLOCKSIZE != 0 || uploadSize > PV_CHUNKSIZE + PV_MFK_LEN) {
 			printf("Invalid upload size: %zu\n", uploadSize);
 			return;
 		}
@@ -248,20 +207,20 @@ static void respondClient(const int sock) {
 			recv(sock, buf, postBegin - buf, MSG_WAITALL);
 			shutdown(sock, SHUT_RD);
 
-			unsigned char bodyKey[crypto_aead_aegis256_KEYBYTES];
-			getSecretHash(bodyKey, crypto_aead_aegis256_KEYBYTES, shared_secret, raw + 43, 1);
-			getSecretHash(secret_hash, 1 + crypto_onetimeauth_KEYBYTES, shared_secret, raw + 43, 2);
+			// MFK encryption key
+			unsigned char xmfk[32];
+			crypto_generichash(xmfk, 32,
+				(unsigned char[7]) {*(unsigned char*)&req, *((unsigned char*)&req + 1), *((unsigned char*)&req + 2), *((unsigned char*)&req + 3), *((unsigned char*)&req + 4), *((unsigned char*)&req + 8), *((unsigned char*)&req + 9)}
+			, 7, user[req.userId].uak, AEM_SECURITY_UAK_LEN);
 
-			respond_addFile(sock, req.userId, req.slot, req.chunk, (req.flags & PV_FLAG_KEEP) != 0, uploadSize, req.binTs, bodyKey, secret_hash);
-
-			sodium_memzero(bodyKey, crypto_aead_aegis256_KEYBYTES);
+			respond_addFile(sock, req.userId, req.slot, req.chunk, (req.flags & PV_FLAG_KEEP) != 0, uploadSize, req.binTs, xmfk);
 			break;
 		}
 
 		if (lenBuf > 1023) break;
 	}
 
-	sodium_memzero(secret_hash, 27 + crypto_onetimeauth_KEYBYTES);
+	sodium_memzero(secret_hash, PV_REQ_ENC_LENGTH + crypto_onetimeauth_KEYBYTES);
 }
 
 void acceptClients(const int sock) {

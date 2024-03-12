@@ -35,16 +35,16 @@ static int numberOfDigits(const size_t x) {
 }
 
 // Shuffles the encoded character set based on the key
-void ioSetup(const unsigned char pathKey[crypto_kdf_KEYBYTES]) {
+void ioSetup(const unsigned char pathKey[PV_PATHKEY_LEN]) {
 	const char b64_set[] = "0123456789ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz_+";
 	int total = 0;
 	uint64_t done = 0;
 
-	for (int i = 0; total < PV_PATHCHARS_COUNT; i++) {
+	for (uint8_t i = 0; total < PV_PATHCHARS_COUNT; i++) {
 		if (total == 64) done = 0;
 
 		uint8_t val[32];
-		crypto_kdf_derive_from_key(val, 32, i, "PV:Path1", pathKey);
+		crypto_generichash(val, 32, &i, 1, pathKey, PV_PATHKEY_LEN);
 
 		for (int j = 0; j < 32; j++) {
 			val[j] &= 63;
@@ -105,20 +105,19 @@ static int getFd(const uint16_t uid, const int slot, uint32_t * const fileBlocks
 	return fd;
 }
 
-static void respondStatus(const int sock, const unsigned char status, const unsigned char responseKey[1 + crypto_onetimeauth_KEYBYTES]) {
-	unsigned char response[107];
-
-	memcpy(response,
-		"HTTP/1.1 200 PV\r\n"
-		"Content-Length: 17\r\n"
-		"Access-Control-Allow-Origin: *\r\n"
-		"Connection: close\r\n"
-		"\r\n", 90);
-
-	response[90] = status ^ responseKey[0];
-	crypto_onetimeauth(response + 91, response + 90, 1, responseKey + 1);
-
-	send(sock, response, 107, 0);
+static void respondStatus(const int sock, const bool ok) {
+	send(sock,
+		ok?
+			"HTTP/1.1 204 PV\r\n"
+			"Access-Control-Allow-Origin: *\r\n"
+			"Connection: close\r\n"
+			"\r\n"
+		:
+			"HTTP/1.1 204 pv\r\n"
+			"Access-Control-Allow-Origin: *\r\n"
+			"Connection: close\r\n"
+			"\r\n"	
+		, 70, 0);
 }
 
 static void mfk_encrypt(unsigned char * const src, const unsigned int blockCount, const unsigned char mfk[PV_MFK_LEN]) {
@@ -136,23 +135,24 @@ static void mfk_encrypt(unsigned char * const src, const unsigned int blockCount
 	sodium_memzero(&aes, sizeof(struct AES_ctx));
 }
 
-void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t encSize, uint64_t ts_file, const unsigned char bodyKey[crypto_aead_aegis256_KEYBYTES], const unsigned char responseKey[1 + crypto_onetimeauth_KEYBYTES]) {
+void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t rawSize, uint64_t ts_file, unsigned char xmfk[32]) {
 	const int fd = getFd(uid, slot, NULL, keep? &ts_file : NULL, keep);
 	if (fd < 0) {puts("Failed getFd"); return;}
 
-	unsigned char * const enc = malloc(encSize);
-	if (enc == NULL) {
+	unsigned char * const raw = malloc(rawSize);
+	if (raw == NULL) {
 		puts("Failed malloc");
 		close(fd);
 		return;
 	}
+	bzero(raw, rawSize);
 
 	size_t received = 0;
-	while (received < encSize) {
-		const ssize_t ret = recv(sock, enc + received, encSize - received, 0);
+	while (received < rawSize) {
+		const ssize_t ret = recv(sock, raw + received, rawSize - received, 0);
 		if (ret < 0) {
 			perror("Failed recv");
-			free(enc);
+			free(raw);
 			close(fd);
 			return;
 		}
@@ -160,39 +160,25 @@ void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, co
 		received += ret;
 	}
 
-	unsigned char * const dec = malloc(encSize - crypto_aead_aegis256_ABYTES);
-	if (dec == NULL) {
-		puts("Failed malloc");
-		free(enc);
-		close(fd);
-		return;
-	}
+	const size_t lenContent = rawSize - PV_MFK_LEN;
+	unsigned char * const content = raw + PV_MFK_LEN;
 
-	unsigned char aead_nonce[crypto_aead_aegis256_NPUBBYTES];
-	memset(aead_nonce, 0xFF, crypto_aead_aegis256_NPUBBYTES);
-	if (crypto_aead_aegis256_decrypt(dec, NULL, NULL, enc, encSize, NULL, 0, aead_nonce, bodyKey) != 0) {
-		puts("Failed AEGIS decrypt");
-		free(enc);
-		free(dec);
-		close(fd);
-		return;
-	}
-
-	free(enc);
-
-	const size_t lenContent = encSize - crypto_aead_aegis256_ABYTES - PV_MFK_LEN;
-	unsigned char * const content = dec + PV_MFK_LEN;
-
-	mfk_encrypt(content, lenContent / PV_BLOCKSIZE, dec);
+	mfk_encrypt(content, lenContent / PV_BLOCKSIZE, (unsigned char[]) {
+		raw[0]  ^ xmfk[0],  raw[1]  ^ xmfk[1],  raw[2]  ^ xmfk[2],  raw[3]  ^ xmfk[3],  raw[4]  ^ xmfk[4],  raw[5]  ^ xmfk[5],  raw[6]  ^ xmfk[6],  raw[7]  ^ xmfk[7],  raw[8]  ^ xmfk[8],  raw[9]  ^ xmfk[9],
+		raw[10] ^ xmfk[10], raw[11] ^ xmfk[11], raw[12] ^ xmfk[12], raw[13] ^ xmfk[13], raw[14] ^ xmfk[14], raw[15] ^ xmfk[15], raw[16] ^ xmfk[16], raw[17] ^ xmfk[17], raw[18] ^ xmfk[18], raw[19] ^ xmfk[19],
+		raw[20] ^ xmfk[20], raw[21] ^ xmfk[21], raw[22] ^ xmfk[22], raw[23] ^ xmfk[23], raw[24] ^ xmfk[24], raw[25] ^ xmfk[25], raw[26] ^ xmfk[26], raw[27] ^ xmfk[27], raw[28] ^ xmfk[28], raw[29] ^ xmfk[29],
+		raw[30] ^ xmfk[30], raw[31] ^ xmfk[31]
+	});
 
 	if (pwrite(fd, content, lenContent, chunk * PV_CHUNKSIZE) != (off_t)lenContent) {
 		perror("Failed writing file");
+		free(raw);
 		close(fd);
-		free(dec);
+		respondStatus(sock, false);
 		return;
 	}
 
-	free(dec);
+	free(raw);
 
 	struct timespec t[2];
 	t[0].tv_sec = 0;
@@ -204,15 +190,15 @@ void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, co
 	if (futimens(fd, t) != 0) {
 		perror("Failed futimens");
 		close(fd);
-		respondStatus(sock, 1, responseKey);
+		respondStatus(sock, false);
 		return;
 	}
 
 	close(fd);
-	respondStatus(sock, 0, responseKey);
+	respondStatus(sock, true);
 }
 
-void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk, const unsigned char responseKey[crypto_aead_aegis256_KEYBYTES]) {
+void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, const uint16_t chunk) {
 	uint64_t fileTime;
 	uint32_t fileBlocks;
 	const int fd = getFd(uid, slot, &fileBlocks, &fileTime, false);
@@ -242,10 +228,8 @@ void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, co
 	memcpy(rawData, (unsigned char*)&fileTime, 5);
 	memcpy(rawData + 5, (unsigned char*)&fileBlocks, 4);
 
-	const size_t lenEnc = lenRaw + crypto_aead_aegis256_ABYTES;
-	const size_t lenHeaders = 88 + numberOfDigits(lenEnc);
-	unsigned char * const response = malloc(lenHeaders + lenEnc);
-	memset(response, 0xFF, lenHeaders + lenEnc);
+	const size_t lenHeaders = 88 + numberOfDigits(lenRaw);
+	unsigned char * const response = malloc(lenHeaders + lenRaw);
 
 	sprintf((char*)response,
 		"HTTP/1.1 200 PV\r\n"
@@ -253,16 +237,14 @@ void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, co
 		"Access-Control-Allow-Origin: *\r\n"
 		"Connection: close\r\n"
 		"\r\n"
-	, lenEnc);
+	, lenRaw);
 
-	unsigned char aead_nonce[crypto_aead_aegis256_NPUBBYTES];
-	memset(aead_nonce, 0xFF, crypto_aead_aegis256_NPUBBYTES);
-	crypto_aead_aegis256_encrypt(response + lenHeaders, NULL, rawData, lenRaw, NULL, 0, NULL, aead_nonce, responseKey);
+	memcpy(response + lenHeaders, rawData, lenRaw);
 	free(rawData);
 
-	for (size_t sent = 0; sent < lenHeaders + lenEnc;) {
-		if (sent + PV_SENDSIZE >= lenHeaders + lenEnc) {
-			if (send(sock, response + sent, lenHeaders + lenEnc - sent, 0) != (ssize_t)(lenHeaders + lenEnc - sent)) puts("Failed sending");
+	for (size_t sent = 0; sent < lenHeaders + lenRaw;) {
+		if (sent + PV_SENDSIZE >= lenHeaders + lenRaw) {
+			if (send(sock, response + sent, lenHeaders + lenRaw - sent, 0) != (ssize_t)(lenHeaders + lenRaw - sent)) puts("Failed sending");
 			break;
 		} else {
 			const off_t ret = send(sock, response + sent, PV_SENDSIZE, MSG_MORE);
@@ -279,6 +261,6 @@ void respond_getFile(const int sock, const uint16_t uid, const uint16_t slot, co
 	free(response);
 }
 
-void respond_delFile(const int sock, const uint16_t uid, const uint16_t slot, const unsigned char responseKey[1 + crypto_onetimeauth_KEYBYTES]) {
-	respondStatus(sock, (unlink(PV_USERFILE_PATH) == 0) ? 0 : 0xFF, responseKey);
+void respond_delFile(const int sock, const uint16_t uid, const uint16_t slot) {
+	respondStatus(sock, (unlink(PV_USERFILE_PATH) == 0) ? true : false);
 }
