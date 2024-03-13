@@ -150,7 +150,7 @@ void respond_addFile(const int sock, const uint16_t uid, const uint16_t slot, co
 	size_t received = 0;
 	while (received < rawSize) {
 		const ssize_t ret = recv(sock, raw + received, rawSize - received, 0);
-		if (ret < 0) {
+		if (ret < 1) {
 			perror("Failed recv");
 			free(raw);
 			close(fd);
