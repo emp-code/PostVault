@@ -116,7 +116,7 @@ static void respondStatus(const int sock, const bool ok) {
 			"HTTP/1.1 204 pv\r\n"
 			"Access-Control-Allow-Origin: *\r\n"
 			"Connection: close\r\n"
-			"\r\n"	
+			"\r\n"
 		, 70, 0);
 }
 
