@@ -149,7 +149,8 @@ void respond_addFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	unsigned char * const content = raw + 32;
 
 	// Encrypt with MFK
-	crypto_stream_chacha20_xor(content, content, lenContent, (unsigned char[]) {0,0,0,0,0,0,0,0}, (unsigned char[]) {
+	const uint64_t xorNonce = chunk;
+	crypto_stream_chacha20_xor(content, content, lenContent, (const unsigned char*)&xorNonce, (unsigned char[]) {
 		raw[0]  ^ xmfk[0],  raw[1]  ^ xmfk[1],  raw[2]  ^ xmfk[2],  raw[3]  ^ xmfk[3],  raw[4]  ^ xmfk[4],  raw[5]  ^ xmfk[5],  raw[6]  ^ xmfk[6],  raw[7]  ^ xmfk[7],  raw[8]  ^ xmfk[8],  raw[9]  ^ xmfk[9],
 		raw[10] ^ xmfk[10], raw[11] ^ xmfk[11], raw[12] ^ xmfk[12], raw[13] ^ xmfk[13], raw[14] ^ xmfk[14], raw[15] ^ xmfk[15], raw[16] ^ xmfk[16], raw[17] ^ xmfk[17], raw[18] ^ xmfk[18], raw[19] ^ xmfk[19],
 		raw[20] ^ xmfk[20], raw[21] ^ xmfk[21], raw[22] ^ xmfk[22], raw[23] ^ xmfk[23], raw[24] ^ xmfk[24], raw[25] ^ xmfk[25], raw[26] ^ xmfk[26], raw[27] ^ xmfk[27], raw[28] ^ xmfk[28], raw[29] ^ xmfk[29],
