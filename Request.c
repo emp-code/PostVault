@@ -10,7 +10,7 @@
 
 #include <sodium.h>
 
-#include "Common/AEM_Security.h"
+#include "Common/AEM_KDF.h"
 #include "Common/CreateSocket.h"
 #include "Common/GetKey.h"
 #include "Common/PV_User.h"
@@ -32,7 +32,6 @@
 
 // API request container
 #define PV_REQ_ENC_OFFSET 8
-#define PV_REQ_ENC_LENGTH 3
 struct pv_req {
 	uint64_t binTs: 40;
 	uint64_t userId: 12;
@@ -42,8 +41,8 @@ struct pv_req {
 	uint16_t slot;
 	uint8_t flags: 6;
 	uint8_t cmd: 2;
-	unsigned char mac[crypto_onetimeauth_BYTES];
 
+	unsigned char mac[crypto_onetimeauth_BYTES];
 	unsigned char padding[5];
 };
 
@@ -68,7 +67,7 @@ static const int64_t expiration_times[] = { // in ms
 
 static struct pv_user user[PV_USERCOUNT];
 
-static int loadUsers(const unsigned char sfk[crypto_aead_aegis256_KEYBYTES]) {
+static int loadUsers(const unsigned char smk[AEM_KDF_MASTER_KEYLEN]) {
 	const int fd = open("/Users.pv", O_RDONLY | O_NOCTTY);
 	if (fd < 0) {puts("Failed opening Users.pv"); return -1;}
 
@@ -80,7 +79,13 @@ static int loadUsers(const unsigned char sfk[crypto_aead_aegis256_KEYBYTES]) {
 	close(fd);
 	if (readBytes != lenEnc) {puts("Failed to read Users.pv"); return -1;}
 
-	if (crypto_aead_aegis256_decrypt((unsigned char*)user, NULL, NULL, enc + crypto_aead_aegis256_NPUBBYTES, lenEnc - crypto_aead_aegis256_NPUBBYTES, NULL, 0, enc, sfk) != 0) {
+	unsigned char sfk[crypto_aead_aegis256_KEYBYTES];
+	aem_kdf_master(sfk, crypto_aead_aegis256_KEYBYTES, AEM_KDF_KEYID_PV_FILE, smk);
+
+	const int ret = crypto_aead_aegis256_decrypt((unsigned char*)user, NULL, NULL, enc + crypto_aead_aegis256_NPUBBYTES, lenEnc - crypto_aead_aegis256_NPUBBYTES, NULL, 0, enc, sfk);
+	sodium_memzero(sfk, crypto_aead_aegis256_KEYBYTES);
+
+	if (ret != 0) {
 		puts("Failed decrypting Users.pv");
 		return -1;
 	}
@@ -89,66 +94,105 @@ static int loadUsers(const unsigned char sfk[crypto_aead_aegis256_KEYBYTES]) {
 }
 
 int pv_init(void) {
-	unsigned char smk[AEM_SECURITY_MASTERKEY_LEN];
-	if (getKey(smk, AEM_SECURITY_MASTERKEY_LEN) != 0) return -1;
+	unsigned char smk[AEM_KDF_MASTER_KEYLEN];
+	if (getKey(smk) != 0) return -1;
 
-	unsigned char pathKey[PV_PATHKEY_LEN];
-	aem_security_kdf(pathKey, PV_PATHKEY_LEN, smk, AEM_SECURITY_KEYID_SMK_PV_PATH);
-	ioSetup(pathKey);
-	sodium_memzero(pathKey, PV_PATHKEY_LEN);
+	const int ret = loadUsers(smk);
+	ioSetup(smk);
 
-	unsigned char sfk[crypto_aead_aegis256_KEYBYTES];
-	aem_security_kdf(sfk, crypto_aead_aegis256_KEYBYTES, smk, AEM_SECURITY_KEYID_SMK_PV_FILE);
-
-	sodium_memzero(smk, AEM_SECURITY_MASTERKEY_LEN);
-
-	const int ret = loadUsers(sfk);
-	sodium_memzero(sfk, crypto_aead_aegis256_KEYBYTES);
-	if (ret == -1) return -2;
+	sodium_memzero(smk, AEM_KDF_MASTER_KEYLEN);
+	if (ret == -1) return -1;
 
 	for (int uid = 0; uid < PV_USERCOUNT; uid++) {
-		if (!sodium_is_zero(user[uid].uak, AEM_SECURITY_UAK_LEN)) checkUserDir(uid);
+		if (!sodium_is_zero(user[uid].uak, AEM_KDF_SUB_KEYLEN)) checkUserDir(uid);
 	}
 
 	return createSocket(PV_PORT);
 }
 
-static void respondClient(const int sock) {
+static void respond400(void) {
+	send(PV_SOCK_CLIENT,
+		"HTTP/1.1 400 PV\r\n"
+		"Content-Length: 0\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"\r\n"
+	, 70, 0);
+}
+
+static void respond403(void) {
+	send(PV_SOCK_CLIENT,
+		"HTTP/1.1 403 PV\r\n"
+		"Content-Length: 0\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"\r\n"
+	, 70, 0);
+}
+
+static void respond404(void) {
+	send(PV_SOCK_CLIENT,
+		"HTTP/1.1 404 PV\r\n"
+		"Content-Length: 0\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"\r\n"
+	, 70, 0);
+}
+
+static void respond410(void) {
+	send(PV_SOCK_CLIENT,
+		"HTTP/1.1 410 PV\r\n"
+		"Content-Length: 0\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"\r\n"
+	, 70, 0);
+}
+
+static void respondClient(void) {
 	// Read request
 	unsigned char buf[1024];
-	int lenBuf = recv(sock, buf, PV_REQ_LINE1_LEN, 0);
-	if (lenBuf != PV_REQ_LINE1_LEN) {puts("Terminating: Invalid length"); return;}
+	int lenBuf = recv(PV_SOCK_CLIENT, buf, PV_REQ_LINE1_LEN, 0);
+	if (lenBuf != PV_REQ_LINE1_LEN) return; // Failed reading request
 
-	// Get request type
+	// Get request method
 	const unsigned char *b64_begin;
 	if (memeq(buf, "GET /", 5)) b64_begin = buf + 5;
 	else if (memeq(buf, "POST /", 6)) b64_begin = buf + 6;
-	else {puts("Terminating: Invalid request"); return;}
+	else return; // Invalid method
 
 	// Decode Base64
 	struct pv_req req;
 	size_t lenRaw = 0;
 	sodium_base642bin((unsigned char*)&req, 27, (const char*)b64_begin, 36, NULL, &lenRaw, NULL, sodium_base64_VARIANT_URLSAFE);
-	if (lenRaw != 27) {puts("Terminating: Failed decoding Base64"); return;}
-
-	// Verify user
-	if (sodium_is_zero(user[req.userId].uak, AEM_SECURITY_UAK_LEN)) {printf("Terminating: Unrecognized user: %u\n", req.userId); return;}
-
-	// Authenticate
-	unsigned char secret_hash[PV_REQ_ENC_LENGTH + crypto_onetimeauth_KEYBYTES];
-	crypto_generichash(secret_hash, PV_REQ_ENC_LENGTH + crypto_onetimeauth_KEYBYTES, (unsigned char*)&req, 5, user[req.userId].uak, AEM_SECURITY_UAK_LEN);
-	if (crypto_onetimeauth_verify(req.mac, (unsigned char*)&req + PV_REQ_ENC_OFFSET, PV_REQ_ENC_LENGTH, secret_hash + PV_REQ_ENC_LENGTH) != 0) {
-		puts("Terminating: Failed authentication");
+	if (lenRaw != 27) {
+		// Invalid Base64
+		respond400();
 		return;
 	}
 
-	// Decrypt
-	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 0] ^= secret_hash[0];
-	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 1] ^= secret_hash[1];
-	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 2] ^= secret_hash[2];
+	// Verify user exists
+	if (sodium_is_zero(user[req.userId].uak, AEM_KDF_SUB_KEYLEN)) {
+		// No such user
+		respond403();
+		return;
+	}
+
+	// Authenticate and decrypt
+	unsigned char uak_key[3 + crypto_onetimeauth_KEYBYTES];
+	aem_kdf_sub(uak_key, 3 + crypto_onetimeauth_KEYBYTES, req.binTs | ((buf[0] == 'P') ? 144115188075855872LLU : 72057594037927936LLU), user[req.userId].uak); // [7]=2:1
+
+	if (crypto_onetimeauth_verify(req.mac, (unsigned char*)&req + PV_REQ_ENC_OFFSET, 3, uak_key + 3) != 0) {
+		// Authentication failed
+		respond403();
+		return;
+	}
+
+	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 0] ^= uak_key[0];
+	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 1] ^= uak_key[1];
+	((unsigned char*)&req)[PV_REQ_ENC_OFFSET + 2] ^= uak_key[2];
+	sodium_memzero(uak_key, 3 + crypto_onetimeauth_KEYBYTES);
 
 	if ((req.flags & PV_FLAG_SHARED) != 0 && req.cmd != PV_CMD_DOWNLOAD) {
-		puts("Terminating: Shared flag on non-download request");
+		// Invalid flags
+		respond400();
 		return;
 	}
 
@@ -157,88 +201,90 @@ static void respondClient(const int sock) {
 	const int64_t tsReq = req.binTs;
 	if ((req.flags & PV_FLAG_SHARED) == 0) {
 		if (labs(tsNow - tsReq) > PV_REQ_TS_MAXDIFF) {
-			puts("Terminating: Suspected replay attack - time difference too large");
+			// Suspected replay attack - time difference too large
+			respond404();
 			return;
 		}
 	} else if (tsNow > tsReq + expiration_times[(req.flags >> 1) & 15]) {
-		puts("Terminating: Expired shared link");
+		// Expired shared link
+		respond410();
 		return;
 	}
 
-	// Take action
-	if (memeq(buf, "GET /", 5)) {
+	// GET request
+	if (buf[0] == 'G') {
 		if (req.cmd == PV_CMD_DOWNLOAD) {
-			respond_getFile(sock, req.userId, req.slot, req.chunk);
+			respond_getFile(req.userId, req.slot, req.chunk);
 		} else if (req.cmd == PV_CMD_DELETE) {
-			respond_delFile(sock, req.userId, req.slot);
+			respond_delFile(req.userId, req.slot);
 		} else {
-			puts("Terminating: Invalid GET request");
+			// Invalid command for GET
+			respond400();
 		}
 
-		return;
-	} else if (!memeq(buf, "POST /", 6) || req.cmd != PV_CMD_UPLOAD) {
-		puts("Terminating: Invalid POST request");
 		return;
 	}
 
 	// POST request
+	if (req.cmd != PV_CMD_UPLOAD) {
+		// Invalid command for POST
+		respond400();
+		return;
+	}
+
 	if (sodium_compare((unsigned char*)&req, user[req.userId].lastMod, 5) != 1) {
-		puts("Terminating: Suspected replay attack - request older than last modification");
+		// Suspected replay attack - request older than last modification
+		respond404();
 		return;
 	}
 	memcpy(user[req.userId].lastMod, (unsigned char*)&req, 5);
 
 	lenBuf = 0;
 	for(;;) {
-		const int lenRcv = recv(sock, buf + lenBuf, 1024 - lenBuf, MSG_PEEK);
+		const int lenRcv = recv(PV_SOCK_CLIENT, buf + lenBuf, 1024 - lenBuf, MSG_PEEK);
 		if (lenRcv < 1) {puts("Terminating: Failed receiving request"); break;}
 		lenBuf += lenRcv;
 
 		const unsigned char * const cl = memcasemem(buf, lenBuf, "Content-Length:", 15);
 		const long uploadSize = (cl != NULL && memchr(cl + 15, '\r', (buf + lenBuf) - (cl + 15)) != NULL) ? strtol((const char*)cl + 15, NULL, 10) : -1;
-		if (uploadSize < PV_BLOCKSIZE + PV_MFK_LEN || (uploadSize - PV_MFK_LEN) % PV_BLOCKSIZE != 0 || uploadSize > PV_CHUNKSIZE + PV_MFK_LEN) {
-			printf("Invalid upload size: %ld\n", uploadSize);
+		if (uploadSize < PV_BLOCKSIZE + 32 || (uploadSize - 32) % PV_BLOCKSIZE != 0 || uploadSize > PV_CHUNKSIZE + 32) {
+			respond400(); // Invalid body size
 			return;
 		}
 
 		const unsigned char *postBegin = memmem(buf, lenBuf, "\r\n\r\n", 4);
 		if (postBegin != NULL) {
 			postBegin += 4;
-			recv(sock, buf, postBegin - buf, MSG_WAITALL);
-			shutdown(sock, SHUT_RD);
+			recv(PV_SOCK_CLIENT, buf, postBegin - buf, MSG_WAITALL);
+			shutdown(PV_SOCK_CLIENT, SHUT_RD);
 
 			// MFK encryption key
 			unsigned char xmfk[32];
-			crypto_generichash(xmfk, 32,
-				(unsigned char[7]) {*(unsigned char*)&req, *((unsigned char*)&req + 1), *((unsigned char*)&req + 2), *((unsigned char*)&req + 3), *((unsigned char*)&req + 4), *((unsigned char*)&req + 8), *((unsigned char*)&req + 9)}
-			, 7, user[req.userId].uak, AEM_SECURITY_UAK_LEN);
+			aem_kdf_sub(xmfk, 32, req.binTs | ((uint64_t)req.slot << 40), user[req.userId].uak);
 
-			respond_addFile(sock, req.userId, req.slot, req.chunk, (req.flags & PV_FLAG_KEEP) != 0, uploadSize, req.binTs, xmfk);
+			respond_addFile(req.userId, req.slot, req.chunk, (req.flags & PV_FLAG_KEEP) != 0, uploadSize, req.binTs, xmfk);
 			break;
 		}
 
 		if (lenBuf > 1023) break;
 	}
-
-	sodium_memzero(secret_hash, PV_REQ_ENC_LENGTH + crypto_onetimeauth_KEYBYTES);
 }
 
-void acceptClients(const int sock) {
+void acceptClients(void) {
 	puts("Ready");
 
 	for(;;) {
-		const int newSock = accept4(sock, NULL, NULL, SOCK_CLOEXEC);
-		if (newSock < 0) continue;
+		if (accept4(PV_SOCK_ACCEPT, NULL, NULL, SOCK_CLOEXEC) != PV_SOCK_CLIENT) continue;
 
-		respondClient(newSock);
+		respondClient();
 
 		// Make sure the response is sent before closing the socket
-		shutdown(newSock, SHUT_WR);
+		shutdown(PV_SOCK_CLIENT, SHUT_WR);
 		unsigned char x[1024];
-		read(newSock, x, 1024);
-		read(newSock, x, 1024);
-		close(newSock);
+		read(PV_SOCK_CLIENT, x, 1024);
+		read(PV_SOCK_CLIENT, x, 1024);
+		close(PV_SOCK_CLIENT);
 	}
 
-	close(sock);
+	close(PV_SOCK_CLIENT);
 }

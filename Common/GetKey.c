@@ -3,23 +3,24 @@
 
 #include <sodium.h>
 
+#include "../Common/AEM_KDF.h" // For AEM_KDF_MASTER_KEYLEN
 #include "../Common/ToggleEcho.h"
 
 #include "GetKey.h"
 
-int getKey(unsigned char * const target, const size_t len) {
+int getKey(unsigned char * const master) {
 	toggleEcho(false);
-	fprintf(stderr, "Enter key (Base64) - will not echo\n");
+	fprintf(stderr, "Enter the Server Master Key (SMK) in hex - will not echo\n");
 
-	char b64[sodium_base64_ENCODED_LEN(len, sodium_base64_VARIANT_ORIGINAL) - 1];
-	for (unsigned int i = 0; i < sodium_base64_ENCODED_LEN(len, sodium_base64_VARIANT_ORIGINAL) - 1; i++) {
+	char masterHex[AEM_KDF_MASTER_KEYLEN * 2];
+	for (unsigned int i = 0; i < AEM_KDF_MASTER_KEYLEN * 2; i++) {
 		const int gc = getchar_unlocked();
-		if (!isalnum(gc) && gc != '/' && gc != '+') {toggleEcho(true); return -1;}
-		b64[i] = gc;
+		if (!isxdigit(gc)) {toggleEcho(true); return -1;}
+		masterHex[i] = gc;
 	}
 
-	sodium_base642bin(target, len, b64, sodium_base64_ENCODED_LEN(len, sodium_base64_VARIANT_ORIGINAL) - 1, NULL, NULL, NULL, sodium_base64_VARIANT_ORIGINAL);
-	sodium_memzero(b64, sodium_base64_ENCODED_LEN(len, sodium_base64_VARIANT_ORIGINAL) - 1);
+	sodium_hex2bin(master, AEM_KDF_MASTER_KEYLEN, masterHex, AEM_KDF_MASTER_KEYLEN * 2, NULL, NULL, NULL);
+	sodium_memzero(masterHex, AEM_KDF_MASTER_KEYLEN * 2);
 
 	toggleEcho(true);
 	return 0;

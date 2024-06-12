@@ -69,14 +69,13 @@ int main(void) {
 
 	if (chroot("/var/lib/PostVault") != 0 || chdir("/") != 0) return 8;
 
-	const int sock = pv_init();
-	if (sock < 0) return 50 + abs(sock);
+	if (pv_init() < 0) return 9;
 
 	if (setgroups(0, NULL) != 0
 	|| setgid(p->pw_gid) != 0
 	|| setuid(p->pw_uid) != 0
 	) return 10;
 
-	acceptClients(sock);
+	acceptClients();
 	return 0;
 }
