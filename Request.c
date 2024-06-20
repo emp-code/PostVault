@@ -28,7 +28,7 @@
 #define PV_CMD_DOWNLOAD 0
 #define PV_CMD_UPLOAD   1
 #define PV_CMD_DELETE   2
-//#define PV_CMD_       3
+#define PV_CMD_VERIFY   3
 
 // API request container
 #define PV_REQ_ENC_OFFSET 8
@@ -217,6 +217,11 @@ static void respondClient(void) {
 			respond_getFile(req.userId, req.slot, req.chunk);
 		} else if (req.cmd == PV_CMD_DELETE) {
 			respond_delFile(req.userId, req.slot);
+		} else if (req.cmd == PV_CMD_VERIFY) {
+			unsigned char verifyKey[32];
+			aem_kdf_sub(verifyKey, 32, req.binTs | 216172782113783808LLU, user[req.userId].uak); // [7]=3
+			respond_vfyFile(req.userId, req.slot, verifyKey);
+			sodium_memzero(verifyKey, 32);
 		} else {
 			// Invalid command for GET
 			respond400();

@@ -254,3 +254,57 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 void respond_delFile(const uint16_t uid, const uint16_t slot) {
 	respondStatus((unlink(PV_PATH_USER_FILE) == 0) ? true : false);
 }
+
+static int64_t div_floor(const long long a, const long long b) {
+	return (a - (a % b)) / b;
+}
+
+void respond_vfyFile(const uint16_t uid, const uint16_t slot, const unsigned char * const verifyKey) {
+	uint64_t fileTime;
+	uint32_t blocks;
+	const int fd = getFd(uid, slot, &blocks, &fileTime, false);
+	if (fd < 0) {respondStatus(false); return;}
+
+	const int chunks = div_floor(blocks * PV_BLOCKSIZE, PV_CHUNKSIZE) + 1;
+	unsigned char * const chunkData = malloc(PV_CHUNKSIZE);
+	if (chunkData == NULL) {close(fd); respondStatus(false); return;}
+
+	const ssize_t lenResp = 5 + (chunks * PV_VERIFY_HASHSIZE);
+	unsigned char resp[lenResp];
+	memcpy(resp, &fileTime, 5);
+
+	for (int i = 0; i < chunks; i++) {
+		const ssize_t lenChunk = (i + 1 == chunks) ? (blocks * PV_BLOCKSIZE) - (i * PV_CHUNKSIZE) : PV_CHUNKSIZE;
+		if (pread(fd, chunkData, lenChunk, i * PV_CHUNKSIZE) != lenChunk) {close(fd); free(chunkData); respondStatus(false); return;}
+		crypto_generichash(resp + 5 + (i * PV_VERIFY_HASHSIZE), PV_VERIFY_HASHSIZE, chunkData, lenChunk, verifyKey, 32);
+	}
+
+	free(chunkData);
+	close(fd);
+
+	unsigned char hdr[512];
+	sprintf((char*)hdr,
+		"HTTP/1.1 200 PV\r\n"
+		"Content-Length: %zd\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"Connection: close\r\n"
+		"\r\n"
+	, lenResp);
+	send(PV_SOCK_CLIENT, hdr, strlen((const char * const)hdr), MSG_MORE);
+
+	for (ssize_t sent = 0; sent < lenResp;) {
+		if (sent + PV_SENDSIZE >= lenResp) {
+			if (send(PV_SOCK_CLIENT, resp + sent, lenResp - sent, 0) != (lenResp - sent)) puts("Failed sending");
+			break;
+		} else {
+			const off_t ret = send(PV_SOCK_CLIENT, resp + sent, PV_SENDSIZE, MSG_MORE);
+
+			if (ret != PV_SENDSIZE) {
+				puts("Failed sending");
+				break;
+			}
+
+			sent += ret;
+		}
+	}
+}
