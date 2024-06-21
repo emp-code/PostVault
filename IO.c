@@ -188,6 +188,18 @@ void respond_addFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	respondStatus(true);
 }
 
+static void setSlots(const uint16_t uid, unsigned char * const s) {
+	bzero(s, 8192);
+
+	for (uint16_t slot = 0; slot < UINT16_MAX; slot++) {
+		const int fd = open(PV_PATH_USER_FILE, O_RDONLY | O_NOATIME | O_NOCTTY | O_NOFOLLOW);
+		if (fd == -1) continue;
+
+		s[(slot - (slot % 8)) / 8] |= 1 << (slot % 8);
+		close(fd);
+	}
+}
+
 void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chunk) {
 	uint64_t fileTime;
 	uint32_t fileBlocks;
@@ -203,7 +215,7 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 
 	const off_t lenMax = (fileBlocks * PV_BLOCKSIZE) - startOffset;
 	const off_t lenRead = (lenMax > PV_CHUNKSIZE) ? PV_CHUNKSIZE : lenMax;
-	const size_t lenRaw = 9 + lenRead;
+	const size_t lenRaw = ((slot == 0) ? 8201 : 9) + lenRead;
 	unsigned char * const rawData = malloc(lenRaw);
 
 	const off_t bytesRead = pread(fd, rawData + 9, lenRead, startOffset);
@@ -217,6 +229,7 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 
 	memcpy(rawData, (unsigned char*)&fileTime, 5);
 	memcpy(rawData + 5, (unsigned char*)&fileBlocks, 4);
+	if (slot == 0) setSlots(uid, rawData + lenRaw - 8192);
 
 	const size_t lenHeaders = 88 + numberOfDigits(lenRaw);
 	unsigned char * const response = malloc(lenHeaders + lenRaw);
