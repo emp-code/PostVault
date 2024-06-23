@@ -4,6 +4,7 @@
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
+#include <sys/param.h>
 #include <sys/socket.h>
 #include <sys/stat.h>
 #include <unistd.h>
@@ -213,26 +214,11 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 		return;
 	}
 
-	const off_t lenMax = (fileBlocks * PV_BLOCKSIZE) - startOffset;
-	const off_t lenRead = (lenMax > PV_CHUNKSIZE) ? PV_CHUNKSIZE : lenMax;
+	const size_t lenRead = MIN(PV_CHUNKSIZE, (fileBlocks * PV_BLOCKSIZE) - startOffset);
 	const size_t lenRaw = ((slot == 0) ? 8201 : 9) + lenRead;
-	unsigned char * const rawData = malloc(lenRaw);
-
-	const off_t bytesRead = pread(fd, rawData + 9, lenRead, startOffset);
-	close(fd);
-
-	if (bytesRead != lenRead) {
-		printf("Failed reading file: %ld != %ld\n", bytesRead, lenRead);
-		free(rawData);
-		return;
-	}
-
-	memcpy(rawData, (unsigned char*)&fileTime, 5);
-	memcpy(rawData + 5, (unsigned char*)&fileBlocks, 4);
-	if (slot == 0) setSlots(uid, rawData + lenRaw - 8192);
-
 	const size_t lenHeaders = 88 + numberOfDigits(lenRaw);
-	unsigned char * const response = malloc(lenHeaders + lenRaw);
+	const size_t lenResponse = lenHeaders + lenRaw;
+	unsigned char * const response = malloc(lenResponse);
 
 	sprintf((char*)response,
 		"HTTP/1.1 200 PV\r\n"
@@ -242,25 +228,30 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 		"\r\n"
 	, lenRaw);
 
-	memcpy(response + lenHeaders, rawData, lenRaw);
-	free(rawData);
+	const ssize_t bytesRead = pread(fd, response + lenHeaders + 9, lenRead, startOffset);
+	close(fd);
 
-	for (size_t sent = 0; sent < lenHeaders + lenRaw;) {
-		if (sent + PV_SENDSIZE >= lenHeaders + lenRaw) {
-			if (send(PV_SOCK_CLIENT, response + sent, lenHeaders + lenRaw - sent, 0) != (ssize_t)(lenHeaders + lenRaw - sent)) puts("Failed sending");
-			break;
-		} else {
-			const off_t ret = send(PV_SOCK_CLIENT, response + sent, PV_SENDSIZE, MSG_MORE);
-
-			if (ret != PV_SENDSIZE) {
-				puts("Failed sending");
-				break;
-			}
-
-			sent += ret;
-		}
+	if (bytesRead != (ssize_t)lenRead) {
+		printf("Failed reading file: %ld != %ld\n", bytesRead, lenRead);
+		free(response);
+		return;
 	}
 
+	memcpy(response + lenHeaders, (unsigned char*)&fileTime, 5);
+	memcpy(response + lenHeaders + 5, (unsigned char*)&fileBlocks, 4);
+	if (slot == 0) setSlots(uid, response + lenResponse - 8192);
+
+	size_t sent = 0;
+	while (sent + PV_SENDSIZE < lenResponse) {
+		const ssize_t ret = send(PV_SOCK_CLIENT, response + sent, PV_SENDSIZE, MSG_MORE);
+		if (ret != PV_SENDSIZE) {
+			puts("Failed sending");
+			break;
+		}
+		sent += ret;
+	}
+
+	if (send(PV_SOCK_CLIENT, response + sent, lenResponse - sent, 0) != (ssize_t)(lenResponse - sent)) puts("Failed sending");
 	free(response);
 }
 
