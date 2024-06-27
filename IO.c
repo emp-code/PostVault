@@ -277,42 +277,26 @@ void respond_vfyFile(const uint16_t uid, const uint16_t slot, const unsigned cha
 	unsigned char * const chunkData = malloc(PV_CHUNKSIZE);
 	if (chunkData == NULL) {close(fd); respondStatus(false); return;}
 
-	const ssize_t lenResp = 5 + (chunks * PV_VERIFY_HASHSIZE);
-	unsigned char resp[lenResp];
-	memcpy(resp, &fileTime, 5);
+	unsigned char hdr[512];
+	const int lenHdr = sprintf((char*)hdr,
+		"HTTP/1.1 200 PV\r\n"
+		"Content-Length: %lld\r\n"
+		"Access-Control-Allow-Origin: *\r\n"
+		"Connection: close\r\n"
+		"\r\n"
+	, 5 + (chunks * PV_VERIFY_HASHSIZE));
+	memcpy(hdr + lenHdr, &fileTime, 5);
+	send(PV_SOCK_CLIENT, hdr, lenHdr + 5, MSG_MORE);
 
+	unsigned char hash[PV_VERIFY_HASHSIZE];
 	for (int i = 0; i < chunks; i++) {
-		const ssize_t lenChunk = (i + 1 == chunks) ? ((ssize_t)blocks * PV_BLOCKSIZE) - ((ssize_t)i * PV_CHUNKSIZE) : PV_CHUNKSIZE;
-		if (pread(fd, chunkData, lenChunk, i * PV_CHUNKSIZE) != lenChunk) {close(fd); free(chunkData); respondStatus(false); return;}
-		crypto_generichash(resp + 5 + (i * PV_VERIFY_HASHSIZE), PV_VERIFY_HASHSIZE, chunkData, lenChunk, verifyKey, 32);
+		const bool last = (i + 1 == chunks);
+		const ssize_t lenChunk = last? ((ssize_t)blocks * PV_BLOCKSIZE) - ((ssize_t)i * PV_CHUNKSIZE) : PV_CHUNKSIZE;
+		if (pread(fd, chunkData, lenChunk, i * PV_CHUNKSIZE) != lenChunk) {puts("Failed reading"); break;}
+		crypto_generichash(hash, PV_VERIFY_HASHSIZE, chunkData, lenChunk, verifyKey, 32);
+		if (send(PV_SOCK_CLIENT, hash, PV_VERIFY_HASHSIZE, last? 0 : MSG_MORE) != PV_VERIFY_HASHSIZE) {puts("Failed sending"); break;}
 	}
 
 	free(chunkData);
 	close(fd);
-
-	unsigned char hdr[512];
-	sprintf((char*)hdr,
-		"HTTP/1.1 200 PV\r\n"
-		"Content-Length: %zd\r\n"
-		"Access-Control-Allow-Origin: *\r\n"
-		"Connection: close\r\n"
-		"\r\n"
-	, lenResp);
-	send(PV_SOCK_CLIENT, hdr, strlen((const char * const)hdr), MSG_MORE);
-
-	for (ssize_t sent = 0; sent < lenResp;) {
-		if (sent + PV_SENDSIZE >= lenResp) {
-			if (send(PV_SOCK_CLIENT, resp + sent, lenResp - sent, 0) != (lenResp - sent)) puts("Failed sending");
-			break;
-		} else {
-			const off_t ret = send(PV_SOCK_CLIENT, resp + sent, PV_SENDSIZE, MSG_MORE);
-
-			if (ret != PV_SENDSIZE) {
-				puts("Failed sending");
-				break;
-			}
-
-			sent += ret;
-		}
-	}
 }
