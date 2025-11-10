@@ -14,7 +14,7 @@ int main(void) {
 	if (sodium_init() != 0) return 1;
 
 	// Ask for the Server Master Key
-	unsigned char smk[AEM_KDF_MASTER_KEYLEN];
+	unsigned char smk[AEM_KDF_SMK_KEYLEN];
 	if (getKey(smk) != 0) return -1;
 
 	// Create Users.pv
@@ -30,15 +30,14 @@ int main(void) {
 
 	users[0].level = 3;
 
-	unsigned char ma_umk[AEM_KDF_MASTER_KEYLEN];
-	aem_kdf_master(ma_umk, AEM_KDF_MASTER_KEYLEN, AEM_KDF_KEYID_SMK_UMK, smk);
-	ma_umk[AEM_KDF_MASTER_KEYLEN - 1] = '\0';
-	aem_kdf_master(users[0].uak, AEM_KDF_SUB_KEYLEN, AEM_KDF_KEYID_UMK_UAK, ma_umk);
+	unsigned char ma_umk[AEM_KDF_UMK_KEYLEN];
+	aem_kdf_smk(ma_umk, AEM_KDF_UMK_KEYLEN, AEM_KDF_KEYID_SMK_UMK, smk);
+	aem_kdf_umk(users[0].uak, AEM_KDF_UAK_KEYLEN, AEM_KDF_KEYID_UMK_UAK, ma_umk);
 
 	// Get the Server File Key
 	unsigned char sfk[crypto_aead_aegis256_KEYBYTES];
-	aem_kdf_master(sfk, crypto_aead_aegis256_KEYBYTES, AEM_KDF_KEYID_PV_FILE, smk);
-	sodium_memzero(smk, AEM_KDF_MASTER_KEYLEN);
+	aem_kdf_smk(sfk, crypto_aead_aegis256_KEYBYTES, AEM_KDF_KEYID_PV_FILE, smk);
+	sodium_memzero(smk, AEM_KDF_SMK_KEYLEN);
 
 	// Encrypt the user data
 	const size_t lenEnc = crypto_aead_aegis256_NPUBBYTES + (sizeof(struct pv_user) * PV_USERCOUNT) + crypto_aead_aegis256_ABYTES;

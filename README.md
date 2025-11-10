@@ -8,6 +8,6 @@ The server simply provides a secure API to upload/download/delete a file in a sl
 
 Clients are expected to use client-side encryption, but upload requests must also contain a key for the server-side ChaCha20 encryption, ensuring no data is ever stored unencrypted. For downloads, clients are required to decrypt the data themselves.
 
-The server supports up to 4096 users with 65,536 files per user, with each file up to 64 GiB.
+The server supports up to 4096 users with 65,536 files per user, with each file up to 1 TiB.
 
 PostVault uses the [libsodium](https://libsodium.org) cryptography library.

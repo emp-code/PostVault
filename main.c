@@ -13,6 +13,7 @@
 #include <sys/socket.h>
 #include <sys/types.h>
 #include <unistd.h>
+#include <syslog.h>
 
 #include <sodium.h>
 
@@ -67,6 +68,7 @@ int main(void) {
 	const struct passwd * const p = getpwnam("postvault");
 	if (p == NULL) return 7;
 
+	openlog("PostVault", LOG_NDELAY, 0);
 	if (chroot("/var/lib/PostVault") != 0 || chdir("/") != 0) return 8;
 
 	if (pv_init() < 0) return 9;
