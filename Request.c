@@ -21,7 +21,7 @@
 
 #include "Request.h"
 
-#define PV_REQ_LINE1_LEN 40
+#define PV_REQ_LINE1_LEN 41
 #define PV_REQ_TS_MAXDIFF 30000 // in ms
 
 #define PV_CMD_GET 0
