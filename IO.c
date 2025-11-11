@@ -125,6 +125,8 @@ static void respondStatus(const bool ok) {
 }
 
 void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chunk, const size_t rawSize, uint64_t binTs) {
+	if (slot == PV_SLOT_INDEX && chunk != 0) return;
+
 	// Open file
 	const int fd = getFd(uid, slot, NULL, (slot == PV_SLOT_INDEX) ? NULL: &binTs);
 	if (fd < 0) {puts("Failed getFd"); return;}
