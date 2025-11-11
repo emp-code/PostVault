@@ -14,22 +14,26 @@ void aem_kdf_smk(unsigned char * const out, const size_t lenOut, const uint8_t n
 	/* Key */ smk);
 }
 
-// Use the 342-bit File Master Key to generate a 352-bit Server File Key
+// Use the 312-bit Server File Key to create the server's 320-bit MFK
 __attribute__((nonnull))
-void aem_kdf_fmk(unsigned char * const out, const size_t lenOut, const uint64_t binTs, const unsigned char fmk[AEM_KDF_FMK_KEYLEN]) {
-	bzero(out, lenOut);
+static void aem_kdf_sfk_internal(unsigned char * const out, const size_t lenOut, const uint64_t binTs, const uint16_t uid, const uint32_t chunk, const unsigned char sfk[AEM_KDF_SFK_KEYLEN], const bool clear) {
+	if (clear) bzero(out, lenOut);
 	crypto_stream_chacha20_ietf_xor_ic(out, out, lenOut,
-	/* Nonce */ (const uint8_t[]){(binTs >> 32) & 255, ((binTs >> 40) & 3) | (fmk[42] & 252), fmk[41], fmk[40], fmk[39], fmk[38], fmk[37], fmk[36], fmk[35], fmk[34], fmk[33], fmk[32]},
+	/* Nonce */ (const uint8_t[]){(binTs >> 32) & 255, ((binTs >> 40) & 3) | ((uid & 63) << 2), (uid >> 6) | (((chunk >> 16) & 3) << 6), (chunk >> 8) & 255, chunk & 255, sfk[38], sfk[37], sfk[36], sfk[35], sfk[34], sfk[33], sfk[32]},
 	/* Counter */ binTs & UINT32_MAX,
-	/* Key */ fmk);
+	/* Key */ sfk);
 }
 
+// Generate the server's MFK
 __attribute__((nonnull))
-void aem_kdf_fmk_direct(unsigned char * const out, const size_t lenOut, const uint64_t binTs, const unsigned char fmk[AEM_KDF_FMK_KEYLEN]) {
-	crypto_stream_chacha20_ietf_xor_ic(out, out, lenOut,
-	/* Nonce */ (const uint8_t[]){(binTs >> 32) & 255, ((binTs >> 40) & 3) | (fmk[42] & 252), fmk[41], fmk[40], fmk[39], fmk[38], fmk[37], fmk[36], fmk[35], fmk[34], fmk[33], fmk[32]},
-	/* Counter */ binTs & UINT32_MAX,
-	/* Key */ fmk);
+void aem_kdf_sfk(unsigned char * const out, const size_t lenOut, const uint64_t binTs, const uint16_t uid, const uint32_t chunk, const unsigned char sfk[AEM_KDF_SFK_KEYLEN]) {
+	aem_kdf_sfk_internal(out, lenOut, binTs, uid, chunk, sfk, true);
+}
+
+// Mix (XOR) the server's MFK into the client's MFK
+__attribute__((nonnull))
+void aem_kdf_sfk_direct(unsigned char * const out, const size_t lenOut, const uint64_t binTs, const uint16_t uid, const uint32_t chunk, const unsigned char sfk[AEM_KDF_SFK_KEYLEN]) {
+	aem_kdf_sfk_internal(out, lenOut, binTs, uid, chunk, sfk, false);
 }
 
 // Use the 338-bit UAK to generate up to 64 bytes

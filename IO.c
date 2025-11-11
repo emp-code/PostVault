@@ -24,7 +24,7 @@
 #define PV_PATHCHARS_COUNT 128
 __attribute__((nonstring)) static char path_chars[PV_PATHCHARS_COUNT] = "????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????????";
 
-unsigned char fmk[AEM_KDF_FMK_KEYLEN];
+unsigned char sfk[AEM_KDF_SFK_KEYLEN];
 
 static long long div_floor(const long long a, const long long b) {
 	return (a - (a % b)) / b;
@@ -70,7 +70,7 @@ void ioSetup(const unsigned char smk[AEM_KDF_SMK_KEYLEN]) {
 
 	sodium_memzero(src, 8192);
 
-	aem_kdf_smk(fmk, AEM_KDF_FMK_KEYLEN, AEM_KDF_KEYID_PV_FMK, smk);
+	aem_kdf_smk(sfk, AEM_KDF_SFK_KEYLEN, AEM_KDF_KEYID_PV_SFK, smk);
 }
 
 int checkUserDir(const uint16_t uid) {
@@ -152,12 +152,12 @@ void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 		received += ret;
 	}
 
-	const size_t lenContent = rawSize - 44;
-	unsigned char * const content = raw + 44;
+	const size_t lenContent = rawSize - 40;
+	unsigned char * const content = raw + 40;
 
 	// Server-side encryption
-	aem_kdf_fmk_direct(raw, 44, binTs, fmk);
-	crypto_stream_chacha20_ietf_xor(content, content, lenContent, raw + 32, raw);
+	aem_kdf_sfk_direct(raw, 40, binTs, uid, chunk, sfk);
+	crypto_stream_chacha20_xor(content, content, lenContent, raw + 32, raw);
 
 	// Write
 	if (pwrite(fd, content, lenContent, chunk * PV_CHUNKSIZE) != (off_t)lenContent) {
@@ -216,7 +216,7 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	}
 
 	const size_t lenRead = MIN(PV_CHUNKSIZE, bytes - startOffset);
-	const size_t lenRaw = lenRead + ((slot == PV_SLOT_INDEX) ? 8242 : 50);
+	const size_t lenRaw = lenRead + ((slot == PV_SLOT_INDEX) ? 8238 : 46);
 	const size_t lenHeaders = 69 + numberOfDigits(lenRaw);
 	const size_t lenResponse = lenHeaders + lenRaw;
 	unsigned char * const response = malloc(lenResponse);
@@ -229,7 +229,7 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 		"\r\n"
 	, lenRaw);
 
-	const ssize_t bytesRead = pread(fd, response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8242 : 50), lenRead, startOffset);
+	const ssize_t bytesRead = pread(fd, response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8238 : 46), lenRead, startOffset);
 	close(fd);
 
 	if (bytesRead != (ssize_t)lenRead) {
@@ -239,8 +239,8 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	}
 
 	if (slot == PV_SLOT_INDEX && chunk == 0) setSlots(uid, response + lenHeaders);
-	aem_kdf_fmk(response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8192 : 0), 44, binTs, fmk);
-	memcpy(response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8236 : 44), (unsigned char*)&binTs, 6);
+	aem_kdf_sfk(response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8192 : 0), 40, binTs, uid, chunk, sfk);
+	memcpy(response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8232 : 40), (unsigned char*)&binTs, 6);
 
 	size_t sent = 0;
 	while (sent + PV_SENDSIZE < lenResponse) {
