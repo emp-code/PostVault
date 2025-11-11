@@ -232,7 +232,7 @@ static void respondClient(void) {
 		if (postBegin != NULL) {
 			postBegin += 4;
 			recv(PV_SOCK_CLIENT, buf, postBegin - buf, MSG_WAITALL);
-			respond_putFile(uid, req.slot, req.chunk, 0, uploadSize, req.binTs);
+			respond_putFile(uid, req.slot, req.chunk, uploadSize, req.binTs);
 			break;
 		}
 

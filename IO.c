@@ -88,9 +88,9 @@ int checkUserDir(const uint16_t uid) {
 	return 0;
 }
 
-static int getFd(const uint16_t uid, const int slot, size_t * const bytes, uint64_t * const binTs, const bool keep) {
+static int getFd(const uint16_t uid, const int slot, size_t * const bytes, uint64_t * const binTs) {
 	const bool write = (bytes == NULL);
-	const int fd = open(PV_PATH_USER_FILE, (write? (O_WRONLY | O_CREAT | (keep? 0 : O_TRUNC)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
+	const int fd = open(PV_PATH_USER_FILE, (write? (O_WRONLY | O_CREAT | ((slot == PV_SLOT_INDEX) ? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
 	if (fd < 0) {printf("Failed opening file %s: %m [%s]\n", PV_PATH_USER_FILE, write? "w" : "r"); return -1;}
 
 	struct statx s;
@@ -124,9 +124,9 @@ static void respondStatus(const bool ok) {
 	, 70, 0);
 }
 
-void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chunk, const bool keep, const size_t rawSize, uint64_t binTs) {
+void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chunk, const size_t rawSize, uint64_t binTs) {
 	// Open file
-	const int fd = getFd(uid, slot, NULL, keep? &binTs : NULL, keep);
+	const int fd = getFd(uid, slot, NULL, (slot == PV_SLOT_INDEX) ? NULL: &binTs);
 	if (fd < 0) {puts("Failed getFd"); return;}
 
 	// Receive data
@@ -205,7 +205,7 @@ static void setSlots(const uint16_t uid, unsigned char * const s) {
 void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chunk) {
 	uint64_t binTs = 0;
 	size_t bytes = 0;
-	const int fd = getFd(uid, slot, &bytes, &binTs, false);
+	const int fd = getFd(uid, slot, &bytes, &binTs);
 	if (fd < 0) return;
 
 	const size_t startOffset = chunk * PV_CHUNKSIZE;
@@ -263,7 +263,7 @@ void respond_delFile(const uint16_t uid, const uint16_t slot) {
 void respond_vfyFile(const uint16_t uid, const uint16_t slot, const unsigned char * const verifyKey) {
 	uint64_t binTs;
 	size_t bytes;
-	const int fd = getFd(uid, slot, &bytes, &binTs, false);
+	const int fd = getFd(uid, slot, &bytes, &binTs);
 	if (fd < 0) {respondStatus(false); return;}
 
 	const long long chunks = div_ceil(bytes, PV_CHUNKSIZE);
