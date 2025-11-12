@@ -154,11 +154,11 @@ void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 		received += ret;
 	}
 
-	const size_t lenContent = rawSize - 40;
-	unsigned char * const content = raw + 40;
+	const size_t lenContent = rawSize - AEM_KDF_MFK_KEYLEN;
+	unsigned char * const content = raw + AEM_KDF_MFK_KEYLEN;
 
 	// Server-side encryption
-	aem_kdf_sfk_direct(raw, 40, binTs, uid, chunk, sfk);
+	aem_kdf_sfk_direct(raw, AEM_KDF_MFK_KEYLEN, binTs, uid, chunk, sfk);
 	crypto_stream_chacha20_xor(content, content, lenContent, raw + 32, raw);
 
 	// Write
@@ -241,8 +241,9 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	}
 
 	if (slot == PV_SLOT_INDEX && chunk == 0) setSlots(uid, response + lenHeaders);
-	aem_kdf_sfk(response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8192 : 0), 40, binTs, uid, chunk, sfk);
-	memcpy(response + lenHeaders + ((slot == PV_SLOT_INDEX) ? 8232 : 40), (unsigned char*)&binTs, 6);
+	const size_t slotOffset = (slot == PV_SLOT_INDEX) ? 8192 : 0;
+	aem_kdf_sfk(response + lenHeaders + slotOffset, AEM_KDF_MFK_KEYLEN, binTs, uid, chunk, sfk);
+	memcpy(response + lenHeaders + slotOffset + AEM_KDF_MFK_KEYLEN, (unsigned char*)&binTs, 6);
 
 	size_t sent = 0;
 	while (sent + PV_SENDSIZE < lenResponse) {

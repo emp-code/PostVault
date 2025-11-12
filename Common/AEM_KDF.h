@@ -7,6 +7,7 @@
 #define AEM_KDF_UMK_KEYLEN 45 // 32 Key + 12 Nonce + 1 Counter (360 bits)
 #define AEM_KDF_SFK_KEYLEN 39 // 312 bits
 #define AEM_KDF_UAK_KEYLEN 43 // 338 bits
+#define AEM_KDF_MFK_KEYLEN 40 // 320 bits
 
 #define AEM_UAK_POST 64
 #define AEM_KDF_PV 128 // Ensure different keys between AEM & PV

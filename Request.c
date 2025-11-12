@@ -222,7 +222,7 @@ static void respondClient(void) {
 
 		const unsigned char * const cl = memcasemem(buf, lenBuf, "Content-Length:", 15);
 		const long uploadSize = (cl != NULL && memchr(cl + 15, '\r', (buf + lenBuf) - (cl + 15)) != NULL) ? strtol((const char*)cl + 15, NULL, 10) : -1;
-		if (uploadSize < 44 || uploadSize > PV_CHUNKSIZE + 44) {
+		if (uploadSize < AEM_KDF_MFK_KEYLEN || uploadSize > PV_CHUNKSIZE + AEM_KDF_MFK_KEYLEN) {
 			// Invalid body size
 			unauthResponse('4','0','0');
 			return;
