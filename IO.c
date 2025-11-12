@@ -91,12 +91,12 @@ int checkUserDir(const uint16_t uid) {
 static int getFd(const uint16_t uid, const int slot, size_t * const bytes, uint64_t * const binTs) {
 	const bool write = (bytes == NULL);
 	const int fd = open(PV_PATH_USER_FILE, (write? (O_WRONLY | O_CREAT | ((slot == PV_SLOT_INDEX) ? O_TRUNC : 0)) : O_RDONLY) | O_NOATIME | O_NOCTTY | O_NOFOLLOW, write? (S_IRUSR | S_IWUSR) : 0);
-	if (fd < 0) {printf("Failed opening file %s: %m [%s]\n", PV_PATH_USER_FILE, write? "w" : "r"); return -1;}
+	if (fd < 0) {syslog(LOG_WARNING, "Failed opening file %s: %m [%s]\n", PV_PATH_USER_FILE, write? "w" : "r"); return -1;}
 
 	struct statx s;
 	if (statx(fd, "", AT_EMPTY_PATH, STATX_MTIME | STATX_SIZE | STATX_MODE | STATX_NLINK | STATX_UID | STATX_GID, &s) != 0) {
 		close(fd);
-		puts("statx() failed");
+		syslog(LOG_WARNING, "statx() failed");
 		return -1;
 	}
 
@@ -105,7 +105,7 @@ static int getFd(const uint16_t uid, const int slot, size_t * const bytes, uint6
 	|| s.stx_mtime.tv_sec > div_floor(AEM_BINTS_BEGIN + AEM_BINTS_MAX, 1000)
 	)) {
 		close(fd);
-		puts("Invalid file attributes");
+		syslog(LOG_WARNING, "Invalid file attributes");
 		return -1;
 	}
 
@@ -129,12 +129,12 @@ void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 
 	// Open file
 	const int fd = getFd(uid, slot, NULL, (slot == PV_SLOT_INDEX) ? NULL: &binTs);
-	if (fd < 0) {puts("Failed getFd"); return;}
+	if (fd < 0) {syslog(LOG_WARNING, "Failed getFd"); return;}
 
 	// Receive data
 	unsigned char * const raw = malloc(rawSize);
 	if (raw == NULL) {
-		puts("Failed malloc");
+		syslog(LOG_ERR, "Failed malloc");
 		close(fd);
 		return;
 	}
@@ -145,7 +145,7 @@ void respond_putFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 		const ssize_t ret = recv(PV_SOCK_CLIENT, raw + received, rawSize - received, 0);
 
 		if (ret < 1) {
-			printf("Failed recv (%d/%d): [%d] %m\n", received, rawSize, ret);
+			syslog(LOG_INFO, "Failed recv (%d/%d): [%d] %m\n", received, rawSize, ret);
 			free(raw);
 			close(fd);
 			return;
@@ -212,7 +212,7 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 
 	const size_t startOffset = chunk * PV_CHUNKSIZE;
 	if (startOffset > bytes) {
-		puts("Invalid size");
+		syslog(LOG_INFO, "Invalid size");
 		close(fd);
 		return;
 	}
@@ -235,7 +235,7 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	close(fd);
 
 	if (bytesRead != (ssize_t)lenRead) {
-		printf("Failed reading file: %ld != %ld\n", bytesRead, lenRead);
+		syslog(LOG_WARNING, "Failed reading file: %ld != %ld\n", bytesRead, lenRead);
 		free(response);
 		return;
 	}
@@ -248,13 +248,13 @@ void respond_getFile(const uint16_t uid, const uint16_t slot, const uint16_t chu
 	while (sent + PV_SENDSIZE < lenResponse) {
 		const ssize_t ret = send(PV_SOCK_CLIENT, response + sent, PV_SENDSIZE, MSG_MORE);
 		if (ret != PV_SENDSIZE) {
-			puts("Failed sending");
+			syslog(LOG_INFO, "Failed sending");
 			break;
 		}
 		sent += ret;
 	}
 
-	if (send(PV_SOCK_CLIENT, response + sent, lenResponse - sent, 0) != (ssize_t)(lenResponse - sent)) puts("Failed sending");
+	if (send(PV_SOCK_CLIENT, response + sent, lenResponse - sent, 0) != (ssize_t)(lenResponse - sent)) syslog(LOG_INFO, "Failed sending");
 	free(response);
 }
 
@@ -287,9 +287,9 @@ void respond_vfyFile(const uint16_t uid, const uint16_t slot, const unsigned cha
 	for (int i = 0; i < chunks; i++) {
 		const bool last = (i + 1 == chunks);
 		const ssize_t lenChunk = last? ((ssize_t)bytes) - ((ssize_t)i * PV_CHUNKSIZE) : PV_CHUNKSIZE;
-		if (pread(fd, chunkData, lenChunk, i * PV_CHUNKSIZE) != lenChunk) {puts("Failed reading"); break;}
+		if (pread(fd, chunkData, lenChunk, i * PV_CHUNKSIZE) != lenChunk) {syslog(LOG_WARNING, "Failed reading"); break;}
 		crypto_generichash(hash, PV_VERIFY_HASHSIZE, chunkData, lenChunk, verifyKey, 32);
-		if (send(PV_SOCK_CLIENT, hash, PV_VERIFY_HASHSIZE, last? 0 : MSG_MORE) != PV_VERIFY_HASHSIZE) {puts("Failed sending"); break;}
+		if (send(PV_SOCK_CLIENT, hash, PV_VERIFY_HASHSIZE, last? 0 : MSG_MORE) != PV_VERIFY_HASHSIZE) {syslog(LOG_INFO, "Failed sending"); break;}
 	}
 
 	free(chunkData);

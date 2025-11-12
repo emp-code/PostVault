@@ -61,15 +61,15 @@ struct pv_user user[PV_USERCOUNT];
 
 static int loadUsers(const unsigned char smk[AEM_KDF_SMK_KEYLEN]) {
 	const int fd = open("/Users.pv", O_RDONLY | O_NOCTTY);
-	if (fd < 0) {puts("Failed opening Users.pv"); return -1;}
+	if (fd < 0) {syslog(LOG_ERR, "Failed opening Users.pv"); return -1;}
 
 	const size_t lenEnc = crypto_aead_aegis256_NPUBBYTES + (sizeof(struct pv_user) * PV_USERCOUNT) + crypto_aead_aegis256_ABYTES;
-	if (lseek(fd, 0, SEEK_END) != lenEnc) {puts("Incorrect size for Users.pv"); close(fd); return -1;}
+	if (lseek(fd, 0, SEEK_END) != lenEnc) {syslog(LOG_ERR, "Incorrect size for Users.pv"); close(fd); return -1;}
 
 	unsigned char enc[lenEnc];
 	const ssize_t readBytes = pread(fd, enc, lenEnc, 0);
 	close(fd);
-	if (readBytes != lenEnc) {puts("Failed to read Users.pv"); return -1;}
+	if (readBytes != lenEnc) {syslog(LOG_ERR, "Failed to read Users.pv"); return -1;}
 
 	unsigned char sfk[crypto_aead_aegis256_KEYBYTES];
 	aem_kdf_smk(sfk, crypto_aead_aegis256_KEYBYTES, AEM_KDF_KEYID_PV_FILE, smk);
@@ -78,7 +78,7 @@ static int loadUsers(const unsigned char smk[AEM_KDF_SMK_KEYLEN]) {
 	sodium_memzero(sfk, crypto_aead_aegis256_KEYBYTES);
 
 	if (ret != 0) {
-		puts("Failed decrypting Users.pv");
+		syslog(LOG_ERR, "Failed decrypting Users.pv");
 		return -1;
 	}
 
@@ -217,7 +217,7 @@ static void respondClient(void) {
 	lenBuf = 0;
 	for(;;) {
 		const int lenRcv = recv(PV_SOCK_CLIENT, buf + lenBuf, 1024 - lenBuf, MSG_PEEK);
-		if (lenRcv < 1) {puts("Terminating: Failed receiving request"); break;}
+		if (lenRcv < 1) {syslog(LOG_INFO, "Terminating: Failed receiving request"); break;}
 		lenBuf += lenRcv;
 
 		const unsigned char * const cl = memcasemem(buf, lenBuf, "Content-Length:", 15);
@@ -241,7 +241,7 @@ static void respondClient(void) {
 }
 
 void acceptClients(void) {
-	puts("Ready");
+	syslog(LOG_INFO, "Ready");
 
 	for(;;) {
 		if (accept4(PV_SOCK_ACCEPT, NULL, NULL, SOCK_CLOEXEC) != PV_SOCK_CLIENT) continue;
